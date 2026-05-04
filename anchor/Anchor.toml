@@ -5,6 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
+lottery = "GAmpA5BkYnV1dsYfVkYwuVz7LxQai5QRkBSnZp6BVVH"
 vault = "DFSWvXJFAPrvtb6AiVo58gpwqE26d583yFJ5ssUCGJax"
 
 [provider]
