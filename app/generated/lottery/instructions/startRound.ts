@@ -131,12 +131,14 @@ export type StartRoundInstructionData = {
   ticketPrice: bigint;
   durationSeconds: bigint;
   bonusballMax: number;
+  guaranteedPrizePoolOverride: bigint;
 };
 
 export type StartRoundInstructionDataArgs = {
   ticketPrice: number | bigint;
   durationSeconds: number | bigint;
   bonusballMax: number;
+  guaranteedPrizePoolOverride: number | bigint;
 };
 
 export function getStartRoundInstructionDataEncoder(): FixedSizeEncoder<StartRoundInstructionDataArgs> {
@@ -146,6 +148,7 @@ export function getStartRoundInstructionDataEncoder(): FixedSizeEncoder<StartRou
       ["ticketPrice", getU64Encoder()],
       ["durationSeconds", getI64Encoder()],
       ["bonusballMax", getU8Encoder()],
+      ["guaranteedPrizePoolOverride", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: START_ROUND_DISCRIMINATOR }),
   );
@@ -157,6 +160,7 @@ export function getStartRoundInstructionDataDecoder(): FixedSizeDecoder<StartRou
     ["ticketPrice", getU64Decoder()],
     ["durationSeconds", getI64Decoder()],
     ["bonusballMax", getU8Decoder()],
+    ["guaranteedPrizePoolOverride", getU64Decoder()],
   ]);
 }
 
@@ -201,6 +205,7 @@ export type StartRoundAsyncInput<
   ticketPrice: StartRoundInstructionDataArgs["ticketPrice"];
   durationSeconds: StartRoundInstructionDataArgs["durationSeconds"];
   bonusballMax: StartRoundInstructionDataArgs["bonusballMax"];
+  guaranteedPrizePoolOverride: StartRoundInstructionDataArgs["guaranteedPrizePoolOverride"];
 };
 
 export async function getStartRoundInstructionAsync<
@@ -388,6 +393,7 @@ export type StartRoundInput<
   ticketPrice: StartRoundInstructionDataArgs["ticketPrice"];
   durationSeconds: StartRoundInstructionDataArgs["durationSeconds"];
   bonusballMax: StartRoundInstructionDataArgs["bonusballMax"];
+  guaranteedPrizePoolOverride: StartRoundInstructionDataArgs["guaranteedPrizePoolOverride"];
 };
 
 export function getStartRoundInstruction<

@@ -10,6 +10,8 @@ import {
   combineCodec,
   getArrayDecoder,
   getArrayEncoder,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getI64Decoder,
   getI64Encoder,
   getStructDecoder,
@@ -34,50 +36,111 @@ import {
 export type ConfigParams = {
   defaultTicketPrice: bigint;
   defaultRoundDurationSecs: bigint;
-  registerWindowSecs: bigint;
   guaranteedPrizePool: bigint;
+  maxGuaranteePerRoundBps: number;
   drawTimeoutSlots: bigint;
   normalBallMax: number;
   bonusballMax: number;
+  /** LP edge (e.g. 2_000 = 20%). */
   lpEdgeBps: number;
-  referralFeeBps: number;
-  referralWinShareBps: number;
+  /** First-order referral fee on ticket purchase (e.g. 800 = 8%). */
+  referralFeeFirstBps: number;
+  /** Second-order referral fee on ticket purchase (e.g. 200 = 2%). */
+  referralFeeSecondBps: number;
+  /** First-order win share (paid at claim). */
+  referralWinShareFirstBps: number;
+  /** Second-order win share (paid at claim). */
+  referralWinShareSecondBps: number;
   lpPoolCap: bigint;
-  tierPayoutBps: Array<number>;
+  /**
+   * Premium pool weights per tier in BPS (must sum to exactly 10_000).
+   * tier_premium_weight_bps[0] must be 0.
+   */
+  tierPremiumWeightBps: Array<number>;
+  /**
+   * Guaranteed minimum payout per winner per tier (USDC base units).
+   * 0 = no minimum for that tier.
+   */
+  tierMinPayoutPerWinner: Array<bigint>;
+  /**
+   * Floor (in BPS) of prize_pool that must remain in the premium pool after guaranteed
+   * minimums are paid. If guaranteed minimums would consume more than (1 - floor),
+   * the round skips guaranteed minimums and pays purely by premium weights.
+   */
+  premiumMinAllocationBps: number;
   untakenTierDestination: UntakenTierDestination;
+  /** Dynamic bonusball: when enabled, bonusball_max scales with prize pool size. */
+  dynamicBonusballEnabled: boolean;
+  bonusballBase: number;
+  /** USDC base-unit step that adds 1 to bonusball_max. */
+  bonusballPoolStepUsdc: bigint;
 };
 
 export type ConfigParamsArgs = {
   defaultTicketPrice: number | bigint;
   defaultRoundDurationSecs: number | bigint;
-  registerWindowSecs: number | bigint;
   guaranteedPrizePool: number | bigint;
+  maxGuaranteePerRoundBps: number;
   drawTimeoutSlots: number | bigint;
   normalBallMax: number;
   bonusballMax: number;
+  /** LP edge (e.g. 2_000 = 20%). */
   lpEdgeBps: number;
-  referralFeeBps: number;
-  referralWinShareBps: number;
+  /** First-order referral fee on ticket purchase (e.g. 800 = 8%). */
+  referralFeeFirstBps: number;
+  /** Second-order referral fee on ticket purchase (e.g. 200 = 2%). */
+  referralFeeSecondBps: number;
+  /** First-order win share (paid at claim). */
+  referralWinShareFirstBps: number;
+  /** Second-order win share (paid at claim). */
+  referralWinShareSecondBps: number;
   lpPoolCap: number | bigint;
-  tierPayoutBps: Array<number>;
+  /**
+   * Premium pool weights per tier in BPS (must sum to exactly 10_000).
+   * tier_premium_weight_bps[0] must be 0.
+   */
+  tierPremiumWeightBps: Array<number>;
+  /**
+   * Guaranteed minimum payout per winner per tier (USDC base units).
+   * 0 = no minimum for that tier.
+   */
+  tierMinPayoutPerWinner: Array<number | bigint>;
+  /**
+   * Floor (in BPS) of prize_pool that must remain in the premium pool after guaranteed
+   * minimums are paid. If guaranteed minimums would consume more than (1 - floor),
+   * the round skips guaranteed minimums and pays purely by premium weights.
+   */
+  premiumMinAllocationBps: number;
   untakenTierDestination: UntakenTierDestinationArgs;
+  /** Dynamic bonusball: when enabled, bonusball_max scales with prize pool size. */
+  dynamicBonusballEnabled: boolean;
+  bonusballBase: number;
+  /** USDC base-unit step that adds 1 to bonusball_max. */
+  bonusballPoolStepUsdc: number | bigint;
 };
 
 export function getConfigParamsEncoder(): FixedSizeEncoder<ConfigParamsArgs> {
   return getStructEncoder([
     ["defaultTicketPrice", getU64Encoder()],
     ["defaultRoundDurationSecs", getI64Encoder()],
-    ["registerWindowSecs", getI64Encoder()],
     ["guaranteedPrizePool", getU64Encoder()],
+    ["maxGuaranteePerRoundBps", getU16Encoder()],
     ["drawTimeoutSlots", getU64Encoder()],
     ["normalBallMax", getU8Encoder()],
     ["bonusballMax", getU8Encoder()],
     ["lpEdgeBps", getU16Encoder()],
-    ["referralFeeBps", getU16Encoder()],
-    ["referralWinShareBps", getU16Encoder()],
+    ["referralFeeFirstBps", getU16Encoder()],
+    ["referralFeeSecondBps", getU16Encoder()],
+    ["referralWinShareFirstBps", getU16Encoder()],
+    ["referralWinShareSecondBps", getU16Encoder()],
     ["lpPoolCap", getU64Encoder()],
-    ["tierPayoutBps", getArrayEncoder(getU16Encoder(), { size: 12 })],
+    ["tierPremiumWeightBps", getArrayEncoder(getU16Encoder(), { size: 12 })],
+    ["tierMinPayoutPerWinner", getArrayEncoder(getU64Encoder(), { size: 12 })],
+    ["premiumMinAllocationBps", getU16Encoder()],
     ["untakenTierDestination", getUntakenTierDestinationEncoder()],
+    ["dynamicBonusballEnabled", getBooleanEncoder()],
+    ["bonusballBase", getU8Encoder()],
+    ["bonusballPoolStepUsdc", getU64Encoder()],
   ]);
 }
 
@@ -85,17 +148,24 @@ export function getConfigParamsDecoder(): FixedSizeDecoder<ConfigParams> {
   return getStructDecoder([
     ["defaultTicketPrice", getU64Decoder()],
     ["defaultRoundDurationSecs", getI64Decoder()],
-    ["registerWindowSecs", getI64Decoder()],
     ["guaranteedPrizePool", getU64Decoder()],
+    ["maxGuaranteePerRoundBps", getU16Decoder()],
     ["drawTimeoutSlots", getU64Decoder()],
     ["normalBallMax", getU8Decoder()],
     ["bonusballMax", getU8Decoder()],
     ["lpEdgeBps", getU16Decoder()],
-    ["referralFeeBps", getU16Decoder()],
-    ["referralWinShareBps", getU16Decoder()],
+    ["referralFeeFirstBps", getU16Decoder()],
+    ["referralFeeSecondBps", getU16Decoder()],
+    ["referralWinShareFirstBps", getU16Decoder()],
+    ["referralWinShareSecondBps", getU16Decoder()],
     ["lpPoolCap", getU64Decoder()],
-    ["tierPayoutBps", getArrayDecoder(getU16Decoder(), { size: 12 })],
+    ["tierPremiumWeightBps", getArrayDecoder(getU16Decoder(), { size: 12 })],
+    ["tierMinPayoutPerWinner", getArrayDecoder(getU64Decoder(), { size: 12 })],
+    ["premiumMinAllocationBps", getU16Decoder()],
     ["untakenTierDestination", getUntakenTierDestinationDecoder()],
+    ["dynamicBonusballEnabled", getBooleanDecoder()],
+    ["bonusballBase", getU8Decoder()],
+    ["bonusballPoolStepUsdc", getU64Decoder()],
   ]);
 }
 

@@ -27,6 +27,8 @@ import {
   getI64Encoder,
   getStructDecoder,
   getStructEncoder,
+  getU16Decoder,
+  getU16Encoder,
   getU32Decoder,
   getU32Encoder,
   getU64Decoder,
@@ -73,13 +75,11 @@ export type Round = {
   drawTime: bigint;
   commitSlot: bigint;
   settledAt: bigint;
-  registerDeadline: bigint;
   emergencyAt: bigint;
   randomnessAccount: Address;
   winningNormals: ReadonlyUint8Array;
   winningBonusball: number;
   ticketCount: bigint;
-  registeredCount: bigint;
   claimedCount: bigint;
   prizePool: bigint;
   lpEdgeAccrued: bigint;
@@ -89,17 +89,24 @@ export type Round = {
   tierPaidCounts: Array<number>;
   tierPaidAmounts: Array<bigint>;
   tallyDone: boolean;
+  usedMinimumPayouts: boolean;
+  minPayoutsTotal: bigint;
+  premiumPayoutsTotal: bigint;
   rolledToLp: bigint;
   rolledToNextRound: bigint;
-  /**
-   * Prize pool seeded from the previous round's rollover (set at start_round time).
-   * Stored so the frontend can always display it separately from ticket revenue.
-   */
+  /** Prize pool seeded from the previous round's rollover (set at start_round time). */
   seedPrizePool: bigint;
   ticketPrizePool: bigint;
   lpGuaranteeReserved: bigint;
   lpLossReserved: bigint;
   playerFundedPrizes: bigint;
+  /**
+   * Snapshot of tier weights and minimums at round start. Mid-round config changes
+   * don't affect rounds already in flight.
+   */
+  tierPremiumWeightBps: Array<number>;
+  tierMinPayoutPerWinner: Array<bigint>;
+  premiumMinAllocationBps: number;
 };
 
 export type RoundArgs = {
@@ -113,13 +120,11 @@ export type RoundArgs = {
   drawTime: number | bigint;
   commitSlot: number | bigint;
   settledAt: number | bigint;
-  registerDeadline: number | bigint;
   emergencyAt: number | bigint;
   randomnessAccount: Address;
   winningNormals: ReadonlyUint8Array;
   winningBonusball: number;
   ticketCount: number | bigint;
-  registeredCount: number | bigint;
   claimedCount: number | bigint;
   prizePool: number | bigint;
   lpEdgeAccrued: number | bigint;
@@ -129,17 +134,24 @@ export type RoundArgs = {
   tierPaidCounts: Array<number>;
   tierPaidAmounts: Array<number | bigint>;
   tallyDone: boolean;
+  usedMinimumPayouts: boolean;
+  minPayoutsTotal: number | bigint;
+  premiumPayoutsTotal: number | bigint;
   rolledToLp: number | bigint;
   rolledToNextRound: number | bigint;
-  /**
-   * Prize pool seeded from the previous round's rollover (set at start_round time).
-   * Stored so the frontend can always display it separately from ticket revenue.
-   */
+  /** Prize pool seeded from the previous round's rollover (set at start_round time). */
   seedPrizePool: number | bigint;
   ticketPrizePool: number | bigint;
   lpGuaranteeReserved: number | bigint;
   lpLossReserved: number | bigint;
   playerFundedPrizes: number | bigint;
+  /**
+   * Snapshot of tier weights and minimums at round start. Mid-round config changes
+   * don't affect rounds already in flight.
+   */
+  tierPremiumWeightBps: Array<number>;
+  tierMinPayoutPerWinner: Array<number | bigint>;
+  premiumMinAllocationBps: number;
 };
 
 /** Gets the encoder for {@link RoundArgs} account data. */
@@ -157,13 +169,11 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
       ["drawTime", getI64Encoder()],
       ["commitSlot", getU64Encoder()],
       ["settledAt", getI64Encoder()],
-      ["registerDeadline", getI64Encoder()],
       ["emergencyAt", getI64Encoder()],
       ["randomnessAccount", getAddressEncoder()],
       ["winningNormals", fixEncoderSize(getBytesEncoder(), 5)],
       ["winningBonusball", getU8Encoder()],
       ["ticketCount", getU64Encoder()],
-      ["registeredCount", getU64Encoder()],
       ["claimedCount", getU64Encoder()],
       ["prizePool", getU64Encoder()],
       ["lpEdgeAccrued", getU64Encoder()],
@@ -173,6 +183,9 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
       ["tierPaidCounts", getArrayEncoder(getU32Encoder(), { size: 12 })],
       ["tierPaidAmounts", getArrayEncoder(getU64Encoder(), { size: 12 })],
       ["tallyDone", getBooleanEncoder()],
+      ["usedMinimumPayouts", getBooleanEncoder()],
+      ["minPayoutsTotal", getU64Encoder()],
+      ["premiumPayoutsTotal", getU64Encoder()],
       ["rolledToLp", getU64Encoder()],
       ["rolledToNextRound", getU64Encoder()],
       ["seedPrizePool", getU64Encoder()],
@@ -180,6 +193,12 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
       ["lpGuaranteeReserved", getU64Encoder()],
       ["lpLossReserved", getU64Encoder()],
       ["playerFundedPrizes", getU64Encoder()],
+      ["tierPremiumWeightBps", getArrayEncoder(getU16Encoder(), { size: 12 })],
+      [
+        "tierMinPayoutPerWinner",
+        getArrayEncoder(getU64Encoder(), { size: 12 }),
+      ],
+      ["premiumMinAllocationBps", getU16Encoder()],
     ]),
     (value) => ({ ...value, discriminator: ROUND_DISCRIMINATOR }),
   );
@@ -199,13 +218,11 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
     ["drawTime", getI64Decoder()],
     ["commitSlot", getU64Decoder()],
     ["settledAt", getI64Decoder()],
-    ["registerDeadline", getI64Decoder()],
     ["emergencyAt", getI64Decoder()],
     ["randomnessAccount", getAddressDecoder()],
     ["winningNormals", fixDecoderSize(getBytesDecoder(), 5)],
     ["winningBonusball", getU8Decoder()],
     ["ticketCount", getU64Decoder()],
-    ["registeredCount", getU64Decoder()],
     ["claimedCount", getU64Decoder()],
     ["prizePool", getU64Decoder()],
     ["lpEdgeAccrued", getU64Decoder()],
@@ -215,6 +232,9 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
     ["tierPaidCounts", getArrayDecoder(getU32Decoder(), { size: 12 })],
     ["tierPaidAmounts", getArrayDecoder(getU64Decoder(), { size: 12 })],
     ["tallyDone", getBooleanDecoder()],
+    ["usedMinimumPayouts", getBooleanDecoder()],
+    ["minPayoutsTotal", getU64Decoder()],
+    ["premiumPayoutsTotal", getU64Decoder()],
     ["rolledToLp", getU64Decoder()],
     ["rolledToNextRound", getU64Decoder()],
     ["seedPrizePool", getU64Decoder()],
@@ -222,6 +242,9 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
     ["lpGuaranteeReserved", getU64Decoder()],
     ["lpLossReserved", getU64Decoder()],
     ["playerFundedPrizes", getU64Decoder()],
+    ["tierPremiumWeightBps", getArrayDecoder(getU16Decoder(), { size: 12 })],
+    ["tierMinPayoutPerWinner", getArrayDecoder(getU64Decoder(), { size: 12 })],
+    ["premiumMinAllocationBps", getU16Decoder()],
   ]);
 }
 
@@ -284,5 +307,5 @@ export async function fetchAllMaybeRound(
 }
 
 export function getRoundSize(): number {
-  return 507;
+  return 630;
 }

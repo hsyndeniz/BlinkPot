@@ -58,12 +58,15 @@ export type Ticket = {
   owner: Address;
   buyer: Address;
   referrer: Address;
+  parentReferrer: Address;
   hasReferrer: boolean;
+  hasParentReferrer: boolean;
   purchasedAt: bigint;
   pricePaid: bigint;
   normals: ReadonlyUint8Array;
   bonusball: number;
-  registered: boolean;
+  /** True once the ticket has been processed by `tally_round` (tier set). */
+  tallied: boolean;
   claimed: boolean;
   tier: number;
   bump: number;
@@ -75,12 +78,15 @@ export type TicketArgs = {
   owner: Address;
   buyer: Address;
   referrer: Address;
+  parentReferrer: Address;
   hasReferrer: boolean;
+  hasParentReferrer: boolean;
   purchasedAt: number | bigint;
   pricePaid: number | bigint;
   normals: ReadonlyUint8Array;
   bonusball: number;
-  registered: boolean;
+  /** True once the ticket has been processed by `tally_round` (tier set). */
+  tallied: boolean;
   claimed: boolean;
   tier: number;
   bump: number;
@@ -96,12 +102,14 @@ export function getTicketEncoder(): FixedSizeEncoder<TicketArgs> {
       ["owner", getAddressEncoder()],
       ["buyer", getAddressEncoder()],
       ["referrer", getAddressEncoder()],
+      ["parentReferrer", getAddressEncoder()],
       ["hasReferrer", getBooleanEncoder()],
+      ["hasParentReferrer", getBooleanEncoder()],
       ["purchasedAt", getI64Encoder()],
       ["pricePaid", getU64Encoder()],
       ["normals", fixEncoderSize(getBytesEncoder(), 5)],
       ["bonusball", getU8Encoder()],
-      ["registered", getBooleanEncoder()],
+      ["tallied", getBooleanEncoder()],
       ["claimed", getBooleanEncoder()],
       ["tier", getU8Encoder()],
       ["bump", getU8Encoder()],
@@ -119,12 +127,14 @@ export function getTicketDecoder(): FixedSizeDecoder<Ticket> {
     ["owner", getAddressDecoder()],
     ["buyer", getAddressDecoder()],
     ["referrer", getAddressDecoder()],
+    ["parentReferrer", getAddressDecoder()],
     ["hasReferrer", getBooleanDecoder()],
+    ["hasParentReferrer", getBooleanDecoder()],
     ["purchasedAt", getI64Decoder()],
     ["pricePaid", getU64Decoder()],
     ["normals", fixDecoderSize(getBytesDecoder(), 5)],
     ["bonusball", getU8Decoder()],
-    ["registered", getBooleanDecoder()],
+    ["tallied", getBooleanDecoder()],
     ["claimed", getBooleanDecoder()],
     ["tier", getU8Decoder()],
     ["bump", getU8Decoder()],
@@ -190,5 +200,5 @@ export async function fetchAllMaybeTicket(
 }
 
 export function getTicketSize(): number {
-  return 147;
+  return 180;
 }

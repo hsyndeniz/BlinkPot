@@ -24,112 +24,126 @@ export const LOTTERY_ERROR__EMERGENCY_MODE = 0x1772; // 6002
 export const LOTTERY_ERROR__NOT_IN_EMERGENCY_MODE = 0x1773; // 6003
 /** InvalidConfig: Invalid configuration parameters */
 export const LOTTERY_ERROR__INVALID_CONFIG = 0x1774; // 6004
-/** InvalidTierPayoutBps: Tier payout basis points sum exceeds 10_000 */
-export const LOTTERY_ERROR__INVALID_TIER_PAYOUT_BPS = 0x1775; // 6005
+/** InvalidTierWeightBps: Tier weight basis points sum must equal 10_000 */
+export const LOTTERY_ERROR__INVALID_TIER_WEIGHT_BPS = 0x1775; // 6005
+/** PrizePoolBelowFloor: Prize pool BPS falls below the protocol minimum */
+export const LOTTERY_ERROR__PRIZE_POOL_BELOW_FLOOR = 0x1776; // 6006
+/** InvalidPremiumAllocation: Premium minimum allocation is out of range */
+export const LOTTERY_ERROR__INVALID_PREMIUM_ALLOCATION = 0x1777; // 6007
 /** InvalidRoundDuration: Round duration outside allowed range */
-export const LOTTERY_ERROR__INVALID_ROUND_DURATION = 0x1776; // 6006
+export const LOTTERY_ERROR__INVALID_ROUND_DURATION = 0x1778; // 6008
 /** InvalidBonusballRange: Bonusball max outside allowed range */
-export const LOTTERY_ERROR__INVALID_BONUSBALL_RANGE = 0x1777; // 6007
+export const LOTTERY_ERROR__INVALID_BONUSBALL_RANGE = 0x1779; // 6009
 /** InvalidTicketPrice: Ticket price must be positive */
-export const LOTTERY_ERROR__INVALID_TICKET_PRICE = 0x1778; // 6008
+export const LOTTERY_ERROR__INVALID_TICKET_PRICE = 0x177a; // 6010
+/** GuaranteeExceedsCap: Per-round guarantee exceeds the configured NAV cap */
+export const LOTTERY_ERROR__GUARANTEE_EXCEEDS_CAP = 0x177b; // 6011
 /** RoundNotOpen: Round is not in Open state */
-export const LOTTERY_ERROR__ROUND_NOT_OPEN = 0x1779; // 6009
+export const LOTTERY_ERROR__ROUND_NOT_OPEN = 0x177c; // 6012
 /** DrawTimeNotReached: Round draw time has not yet been reached */
-export const LOTTERY_ERROR__DRAW_TIME_NOT_REACHED = 0x177a; // 6010
+export const LOTTERY_ERROR__DRAW_TIME_NOT_REACHED = 0x177d; // 6013
 /** RoundNotDrawing: Round is not awaiting reveal */
-export const LOTTERY_ERROR__ROUND_NOT_DRAWING = 0x177b; // 6011
+export const LOTTERY_ERROR__ROUND_NOT_DRAWING = 0x177e; // 6014
 /** RoundNotSettled: Round is not in Settled state */
-export const LOTTERY_ERROR__ROUND_NOT_SETTLED = 0x177c; // 6012
-/** UnregisteredTicketsRemain: Not all tickets are registered yet */
-export const LOTTERY_ERROR__UNREGISTERED_TICKETS_REMAIN = 0x177d; // 6013
+export const LOTTERY_ERROR__ROUND_NOT_SETTLED = 0x177f; // 6015
+/** RoundAlreadyTallied: Round has already been tallied */
+export const LOTTERY_ERROR__ROUND_ALREADY_TALLIED = 0x1780; // 6016
+/** RoundNotTallied: Round has not been tallied yet */
+export const LOTTERY_ERROR__ROUND_NOT_TALLIED = 0x1781; // 6017
 /** RoundNotClaimable: Round is not in Claimable or Archived state */
-export const LOTTERY_ERROR__ROUND_NOT_CLAIMABLE = 0x177e; // 6014
+export const LOTTERY_ERROR__ROUND_NOT_CLAIMABLE = 0x1782; // 6018
 /** RoundNotArchivable: Round is not yet ready to be archived */
-export const LOTTERY_ERROR__ROUND_NOT_ARCHIVABLE = 0x177f; // 6015
+export const LOTTERY_ERROR__ROUND_NOT_ARCHIVABLE = 0x1783; // 6019
 /** PreviousRoundUnsettled: A previous round must be settled before starting a new one */
-export const LOTTERY_ERROR__PREVIOUS_ROUND_UNSETTLED = 0x1780; // 6016
+export const LOTTERY_ERROR__PREVIOUS_ROUND_UNSETTLED = 0x1784; // 6020
 /** RoundIdMismatch: Round id mismatch */
-export const LOTTERY_ERROR__ROUND_ID_MISMATCH = 0x1781; // 6017
+export const LOTTERY_ERROR__ROUND_ID_MISMATCH = 0x1785; // 6021
+/** NoOpenRound: No open round available for purchase */
+export const LOTTERY_ERROR__NO_OPEN_ROUND = 0x1786; // 6022
 /** InvalidTicketNumbers: Ticket numbers must be sorted ascending and unique */
-export const LOTTERY_ERROR__INVALID_TICKET_NUMBERS = 0x1782; // 6018
+export const LOTTERY_ERROR__INVALID_TICKET_NUMBERS = 0x1787; // 6023
 /** NormalBallOutOfRange: Normal ball out of range */
-export const LOTTERY_ERROR__NORMAL_BALL_OUT_OF_RANGE = 0x1783; // 6019
+export const LOTTERY_ERROR__NORMAL_BALL_OUT_OF_RANGE = 0x1788; // 6024
 /** BonusballOutOfRange: Bonusball out of range */
-export const LOTTERY_ERROR__BONUSBALL_OUT_OF_RANGE = 0x1784; // 6020
+export const LOTTERY_ERROR__BONUSBALL_OUT_OF_RANGE = 0x1789; // 6025
 /** InvalidBatchSize: Batch size out of range */
-export const LOTTERY_ERROR__INVALID_BATCH_SIZE = 0x1785; // 6021
-/** TicketAlreadyRegistered: Ticket already registered */
-export const LOTTERY_ERROR__TICKET_ALREADY_REGISTERED = 0x1786; // 6022
+export const LOTTERY_ERROR__INVALID_BATCH_SIZE = 0x178a; // 6026
 /** TicketAlreadyClaimed: Ticket already claimed */
-export const LOTTERY_ERROR__TICKET_ALREADY_CLAIMED = 0x1787; // 6023
-/** NoTierWinners: Tier has no winners; tally first or nothing to claim */
-export const LOTTERY_ERROR__NO_TIER_WINNERS = 0x1788; // 6024
-/** TierNotTallied: Tier has not been tallied yet */
-export const LOTTERY_ERROR__TIER_NOT_TALLIED = 0x1789; // 6025
+export const LOTTERY_ERROR__TICKET_ALREADY_CLAIMED = 0x178b; // 6027
 /** NotAWinningTier: Tickets in tier 0 are not winners */
-export const LOTTERY_ERROR__NOT_A_WINNING_TIER = 0x178a; // 6026
+export const LOTTERY_ERROR__NOT_A_WINNING_TIER = 0x178c; // 6028
+/** NoTierWinners: Tier has no winners */
+export const LOTTERY_ERROR__NO_TIER_WINNERS = 0x178d; // 6029
+/** NoWinningTickets: No winning tickets supplied */
+export const LOTTERY_ERROR__NO_WINNING_TICKETS = 0x178e; // 6030
 /** InvalidRandomnessAccount: Switchboard randomness account mismatch */
-export const LOTTERY_ERROR__INVALID_RANDOMNESS_ACCOUNT = 0x178b; // 6027
+export const LOTTERY_ERROR__INVALID_RANDOMNESS_ACCOUNT = 0x178f; // 6031
 /** RandomnessAlreadyRevealed: Switchboard randomness has already been revealed */
-export const LOTTERY_ERROR__RANDOMNESS_ALREADY_REVEALED = 0x178c; // 6028
+export const LOTTERY_ERROR__RANDOMNESS_ALREADY_REVEALED = 0x1790; // 6032
 /** RandomnessNotResolved: Switchboard randomness is not yet ready */
-export const LOTTERY_ERROR__RANDOMNESS_NOT_RESOLVED = 0x178d; // 6029
+export const LOTTERY_ERROR__RANDOMNESS_NOT_RESOLVED = 0x1791; // 6033
 /** RandomnessExpired: Switchboard randomness is stale */
-export const LOTTERY_ERROR__RANDOMNESS_EXPIRED = 0x178e; // 6030
+export const LOTTERY_ERROR__RANDOMNESS_EXPIRED = 0x1792; // 6034
 /** RandomnessDerivationFailed: Failed to derive winning numbers from randomness */
-export const LOTTERY_ERROR__RANDOMNESS_DERIVATION_FAILED = 0x178f; // 6031
+export const LOTTERY_ERROR__RANDOMNESS_DERIVATION_FAILED = 0x1793; // 6035
 /** RandomnessCommitStillActive: Active randomness commitment has not timed out */
-export const LOTTERY_ERROR__RANDOMNESS_COMMIT_STILL_ACTIVE = 0x1790; // 6032
+export const LOTTERY_ERROR__RANDOMNESS_COMMIT_STILL_ACTIVE = 0x1794; // 6036
 /** LpCapExceeded: LP cap would be exceeded */
-export const LOTTERY_ERROR__LP_CAP_EXCEEDED = 0x1791; // 6033
+export const LOTTERY_ERROR__LP_CAP_EXCEEDED = 0x1795; // 6037
 /** LpInsufficientShares: LP position has insufficient shares */
-export const LOTTERY_ERROR__LP_INSUFFICIENT_SHARES = 0x1792; // 6034
+export const LOTTERY_ERROR__LP_INSUFFICIENT_SHARES = 0x1796; // 6038
 /** LpWithdrawalPending: LP withdrawal already pending */
-export const LOTTERY_ERROR__LP_WITHDRAWAL_PENDING = 0x1793; // 6035
+export const LOTTERY_ERROR__LP_WITHDRAWAL_PENDING = 0x1797; // 6039
 /** LpWithdrawalNotReady: LP withdrawal not yet finalizable */
-export const LOTTERY_ERROR__LP_WITHDRAWAL_NOT_READY = 0x1794; // 6036
+export const LOTTERY_ERROR__LP_WITHDRAWAL_NOT_READY = 0x1798; // 6040
 /** LpNoPendingWithdrawal: No pending LP withdrawal */
-export const LOTTERY_ERROR__LP_NO_PENDING_WITHDRAWAL = 0x1795; // 6037
+export const LOTTERY_ERROR__LP_NO_PENDING_WITHDRAWAL = 0x1799; // 6041
 /** PrizeVaultUnderfunded: Insufficient prize vault balance for payout */
-export const LOTTERY_ERROR__PRIZE_VAULT_UNDERFUNDED = 0x1796; // 6038
+export const LOTTERY_ERROR__PRIZE_VAULT_UNDERFUNDED = 0x179a; // 6042
 /** LpPrincipalUnderfunded: Insufficient LP principal for payout shortfall */
-export const LOTTERY_ERROR__LP_PRINCIPAL_UNDERFUNDED = 0x1797; // 6039
+export const LOTTERY_ERROR__LP_PRINCIPAL_UNDERFUNDED = 0x179b; // 6043
 /** LpGuaranteeUnavailable: Insufficient available LP liquidity for round guarantee */
-export const LOTTERY_ERROR__LP_GUARANTEE_UNAVAILABLE = 0x1798; // 6040
+export const LOTTERY_ERROR__LP_GUARANTEE_UNAVAILABLE = 0x179c; // 6044
 /** NoReferralFees: No referral fees to claim */
-export const LOTTERY_ERROR__NO_REFERRAL_FEES = 0x1799; // 6041
+export const LOTTERY_ERROR__NO_REFERRAL_FEES = 0x179d; // 6045
 /** SelfReferral: Referrer cannot be the buyer */
-export const LOTTERY_ERROR__SELF_REFERRAL = 0x179a; // 6042
+export const LOTTERY_ERROR__SELF_REFERRAL = 0x179e; // 6046
 /** ReferralRequired: Referral account is required */
-export const LOTTERY_ERROR__REFERRAL_REQUIRED = 0x179b; // 6043
+export const LOTTERY_ERROR__REFERRAL_REQUIRED = 0x179f; // 6047
+/** SelfParentReferrer: Parent referrer cannot be the referrer themself */
+export const LOTTERY_ERROR__SELF_PARENT_REFERRER = 0x17a0; // 6048
+/** ParentReferrerMismatch: Parent referrer account does not match the referrer's stored parent */
+export const LOTTERY_ERROR__PARENT_REFERRER_MISMATCH = 0x17a1; // 6049
 /** SubscriptionInactive: Subscription is inactive or expired */
-export const LOTTERY_ERROR__SUBSCRIPTION_INACTIVE = 0x179c; // 6044
+export const LOTTERY_ERROR__SUBSCRIPTION_INACTIVE = 0x17a2; // 6050
 /** SubscriptionPriceChanged: Subscription ticket price changed */
-export const LOTTERY_ERROR__SUBSCRIPTION_PRICE_CHANGED = 0x179d; // 6045
+export const LOTTERY_ERROR__SUBSCRIPTION_PRICE_CHANGED = 0x17a3; // 6051
 /** SubscriptionAlreadyProcessed: Subscription already processed for this round */
-export const LOTTERY_ERROR__SUBSCRIPTION_ALREADY_PROCESSED = 0x179e; // 6046
+export const LOTTERY_ERROR__SUBSCRIPTION_ALREADY_PROCESSED = 0x17a4; // 6052
 /** InvalidSubscription: Subscription parameters out of range */
-export const LOTTERY_ERROR__INVALID_SUBSCRIPTION = 0x179f; // 6047
+export const LOTTERY_ERROR__INVALID_SUBSCRIPTION = 0x17a5; // 6053
 /** MathOverflow: Math overflow */
-export const LOTTERY_ERROR__MATH_OVERFLOW = 0x17a0; // 6048
+export const LOTTERY_ERROR__MATH_OVERFLOW = 0x17a6; // 6054
 /** InvalidTokenMint: Token mint mismatch */
-export const LOTTERY_ERROR__INVALID_TOKEN_MINT = 0x17a1; // 6049
+export const LOTTERY_ERROR__INVALID_TOKEN_MINT = 0x17a7; // 6055
 /** RoundNotEmergency: Round is not in Emergency state */
-export const LOTTERY_ERROR__ROUND_NOT_EMERGENCY = 0x17a2; // 6050
+export const LOTTERY_ERROR__ROUND_NOT_EMERGENCY = 0x17a8; // 6056
 
 export type LotteryError =
   | typeof LOTTERY_ERROR__BONUSBALL_OUT_OF_RANGE
   | typeof LOTTERY_ERROR__DRAW_TIME_NOT_REACHED
   | typeof LOTTERY_ERROR__EMERGENCY_MODE
+  | typeof LOTTERY_ERROR__GUARANTEE_EXCEEDS_CAP
   | typeof LOTTERY_ERROR__INVALID_BATCH_SIZE
   | typeof LOTTERY_ERROR__INVALID_BONUSBALL_RANGE
   | typeof LOTTERY_ERROR__INVALID_CONFIG
+  | typeof LOTTERY_ERROR__INVALID_PREMIUM_ALLOCATION
   | typeof LOTTERY_ERROR__INVALID_RANDOMNESS_ACCOUNT
   | typeof LOTTERY_ERROR__INVALID_ROUND_DURATION
   | typeof LOTTERY_ERROR__INVALID_SUBSCRIPTION
   | typeof LOTTERY_ERROR__INVALID_TICKET_NUMBERS
   | typeof LOTTERY_ERROR__INVALID_TICKET_PRICE
-  | typeof LOTTERY_ERROR__INVALID_TIER_PAYOUT_BPS
+  | typeof LOTTERY_ERROR__INVALID_TIER_WEIGHT_BPS
   | typeof LOTTERY_ERROR__INVALID_TOKEN_MINT
   | typeof LOTTERY_ERROR__LP_CAP_EXCEEDED
   | typeof LOTTERY_ERROR__LP_GUARANTEE_UNAVAILABLE
@@ -139,13 +153,17 @@ export type LotteryError =
   | typeof LOTTERY_ERROR__LP_WITHDRAWAL_NOT_READY
   | typeof LOTTERY_ERROR__LP_WITHDRAWAL_PENDING
   | typeof LOTTERY_ERROR__MATH_OVERFLOW
+  | typeof LOTTERY_ERROR__NO_OPEN_ROUND
   | typeof LOTTERY_ERROR__NO_REFERRAL_FEES
   | typeof LOTTERY_ERROR__NORMAL_BALL_OUT_OF_RANGE
   | typeof LOTTERY_ERROR__NOT_A_WINNING_TIER
   | typeof LOTTERY_ERROR__NO_TIER_WINNERS
   | typeof LOTTERY_ERROR__NOT_IN_EMERGENCY_MODE
+  | typeof LOTTERY_ERROR__NO_WINNING_TICKETS
+  | typeof LOTTERY_ERROR__PARENT_REFERRER_MISMATCH
   | typeof LOTTERY_ERROR__PAUSED
   | typeof LOTTERY_ERROR__PREVIOUS_ROUND_UNSETTLED
+  | typeof LOTTERY_ERROR__PRIZE_POOL_BELOW_FLOOR
   | typeof LOTTERY_ERROR__PRIZE_VAULT_UNDERFUNDED
   | typeof LOTTERY_ERROR__RANDOMNESS_ALREADY_REVEALED
   | typeof LOTTERY_ERROR__RANDOMNESS_COMMIT_STILL_ACTIVE
@@ -153,6 +171,7 @@ export type LotteryError =
   | typeof LOTTERY_ERROR__RANDOMNESS_EXPIRED
   | typeof LOTTERY_ERROR__RANDOMNESS_NOT_RESOLVED
   | typeof LOTTERY_ERROR__REFERRAL_REQUIRED
+  | typeof LOTTERY_ERROR__ROUND_ALREADY_TALLIED
   | typeof LOTTERY_ERROR__ROUND_ID_MISMATCH
   | typeof LOTTERY_ERROR__ROUND_NOT_ARCHIVABLE
   | typeof LOTTERY_ERROR__ROUND_NOT_CLAIMABLE
@@ -160,15 +179,14 @@ export type LotteryError =
   | typeof LOTTERY_ERROR__ROUND_NOT_EMERGENCY
   | typeof LOTTERY_ERROR__ROUND_NOT_OPEN
   | typeof LOTTERY_ERROR__ROUND_NOT_SETTLED
+  | typeof LOTTERY_ERROR__ROUND_NOT_TALLIED
+  | typeof LOTTERY_ERROR__SELF_PARENT_REFERRER
   | typeof LOTTERY_ERROR__SELF_REFERRAL
   | typeof LOTTERY_ERROR__SUBSCRIPTION_ALREADY_PROCESSED
   | typeof LOTTERY_ERROR__SUBSCRIPTION_INACTIVE
   | typeof LOTTERY_ERROR__SUBSCRIPTION_PRICE_CHANGED
   | typeof LOTTERY_ERROR__TICKET_ALREADY_CLAIMED
-  | typeof LOTTERY_ERROR__TICKET_ALREADY_REGISTERED
-  | typeof LOTTERY_ERROR__TIER_NOT_TALLIED
-  | typeof LOTTERY_ERROR__UNAUTHORIZED
-  | typeof LOTTERY_ERROR__UNREGISTERED_TICKETS_REMAIN;
+  | typeof LOTTERY_ERROR__UNAUTHORIZED;
 
 let lotteryErrorMessages: Record<LotteryError, string> | undefined;
 if (process.env.NODE_ENV !== "production") {
@@ -176,15 +194,17 @@ if (process.env.NODE_ENV !== "production") {
     [LOTTERY_ERROR__BONUSBALL_OUT_OF_RANGE]: `Bonusball out of range`,
     [LOTTERY_ERROR__DRAW_TIME_NOT_REACHED]: `Round draw time has not yet been reached`,
     [LOTTERY_ERROR__EMERGENCY_MODE]: `Emergency mode is active`,
+    [LOTTERY_ERROR__GUARANTEE_EXCEEDS_CAP]: `Per-round guarantee exceeds the configured NAV cap`,
     [LOTTERY_ERROR__INVALID_BATCH_SIZE]: `Batch size out of range`,
     [LOTTERY_ERROR__INVALID_BONUSBALL_RANGE]: `Bonusball max outside allowed range`,
     [LOTTERY_ERROR__INVALID_CONFIG]: `Invalid configuration parameters`,
+    [LOTTERY_ERROR__INVALID_PREMIUM_ALLOCATION]: `Premium minimum allocation is out of range`,
     [LOTTERY_ERROR__INVALID_RANDOMNESS_ACCOUNT]: `Switchboard randomness account mismatch`,
     [LOTTERY_ERROR__INVALID_ROUND_DURATION]: `Round duration outside allowed range`,
     [LOTTERY_ERROR__INVALID_SUBSCRIPTION]: `Subscription parameters out of range`,
     [LOTTERY_ERROR__INVALID_TICKET_NUMBERS]: `Ticket numbers must be sorted ascending and unique`,
     [LOTTERY_ERROR__INVALID_TICKET_PRICE]: `Ticket price must be positive`,
-    [LOTTERY_ERROR__INVALID_TIER_PAYOUT_BPS]: `Tier payout basis points sum exceeds 10_000`,
+    [LOTTERY_ERROR__INVALID_TIER_WEIGHT_BPS]: `Tier weight basis points sum must equal 10_000`,
     [LOTTERY_ERROR__INVALID_TOKEN_MINT]: `Token mint mismatch`,
     [LOTTERY_ERROR__LP_CAP_EXCEEDED]: `LP cap would be exceeded`,
     [LOTTERY_ERROR__LP_GUARANTEE_UNAVAILABLE]: `Insufficient available LP liquidity for round guarantee`,
@@ -194,13 +214,17 @@ if (process.env.NODE_ENV !== "production") {
     [LOTTERY_ERROR__LP_WITHDRAWAL_NOT_READY]: `LP withdrawal not yet finalizable`,
     [LOTTERY_ERROR__LP_WITHDRAWAL_PENDING]: `LP withdrawal already pending`,
     [LOTTERY_ERROR__MATH_OVERFLOW]: `Math overflow`,
+    [LOTTERY_ERROR__NO_OPEN_ROUND]: `No open round available for purchase`,
     [LOTTERY_ERROR__NO_REFERRAL_FEES]: `No referral fees to claim`,
     [LOTTERY_ERROR__NORMAL_BALL_OUT_OF_RANGE]: `Normal ball out of range`,
     [LOTTERY_ERROR__NOT_A_WINNING_TIER]: `Tickets in tier 0 are not winners`,
-    [LOTTERY_ERROR__NO_TIER_WINNERS]: `Tier has no winners; tally first or nothing to claim`,
+    [LOTTERY_ERROR__NO_TIER_WINNERS]: `Tier has no winners`,
     [LOTTERY_ERROR__NOT_IN_EMERGENCY_MODE]: `Emergency mode is not active`,
+    [LOTTERY_ERROR__NO_WINNING_TICKETS]: `No winning tickets supplied`,
+    [LOTTERY_ERROR__PARENT_REFERRER_MISMATCH]: `Parent referrer account does not match the referrer's stored parent`,
     [LOTTERY_ERROR__PAUSED]: `Protocol is paused`,
     [LOTTERY_ERROR__PREVIOUS_ROUND_UNSETTLED]: `A previous round must be settled before starting a new one`,
+    [LOTTERY_ERROR__PRIZE_POOL_BELOW_FLOOR]: `Prize pool BPS falls below the protocol minimum`,
     [LOTTERY_ERROR__PRIZE_VAULT_UNDERFUNDED]: `Insufficient prize vault balance for payout`,
     [LOTTERY_ERROR__RANDOMNESS_ALREADY_REVEALED]: `Switchboard randomness has already been revealed`,
     [LOTTERY_ERROR__RANDOMNESS_COMMIT_STILL_ACTIVE]: `Active randomness commitment has not timed out`,
@@ -208,6 +232,7 @@ if (process.env.NODE_ENV !== "production") {
     [LOTTERY_ERROR__RANDOMNESS_EXPIRED]: `Switchboard randomness is stale`,
     [LOTTERY_ERROR__RANDOMNESS_NOT_RESOLVED]: `Switchboard randomness is not yet ready`,
     [LOTTERY_ERROR__REFERRAL_REQUIRED]: `Referral account is required`,
+    [LOTTERY_ERROR__ROUND_ALREADY_TALLIED]: `Round has already been tallied`,
     [LOTTERY_ERROR__ROUND_ID_MISMATCH]: `Round id mismatch`,
     [LOTTERY_ERROR__ROUND_NOT_ARCHIVABLE]: `Round is not yet ready to be archived`,
     [LOTTERY_ERROR__ROUND_NOT_CLAIMABLE]: `Round is not in Claimable or Archived state`,
@@ -215,15 +240,14 @@ if (process.env.NODE_ENV !== "production") {
     [LOTTERY_ERROR__ROUND_NOT_EMERGENCY]: `Round is not in Emergency state`,
     [LOTTERY_ERROR__ROUND_NOT_OPEN]: `Round is not in Open state`,
     [LOTTERY_ERROR__ROUND_NOT_SETTLED]: `Round is not in Settled state`,
+    [LOTTERY_ERROR__ROUND_NOT_TALLIED]: `Round has not been tallied yet`,
+    [LOTTERY_ERROR__SELF_PARENT_REFERRER]: `Parent referrer cannot be the referrer themself`,
     [LOTTERY_ERROR__SELF_REFERRAL]: `Referrer cannot be the buyer`,
     [LOTTERY_ERROR__SUBSCRIPTION_ALREADY_PROCESSED]: `Subscription already processed for this round`,
     [LOTTERY_ERROR__SUBSCRIPTION_INACTIVE]: `Subscription is inactive or expired`,
     [LOTTERY_ERROR__SUBSCRIPTION_PRICE_CHANGED]: `Subscription ticket price changed`,
     [LOTTERY_ERROR__TICKET_ALREADY_CLAIMED]: `Ticket already claimed`,
-    [LOTTERY_ERROR__TICKET_ALREADY_REGISTERED]: `Ticket already registered`,
-    [LOTTERY_ERROR__TIER_NOT_TALLIED]: `Tier has not been tallied yet`,
     [LOTTERY_ERROR__UNAUTHORIZED]: `Caller is not the configured admin`,
-    [LOTTERY_ERROR__UNREGISTERED_TICKETS_REMAIN]: `Not all tickets are registered yet`,
   };
 }
 

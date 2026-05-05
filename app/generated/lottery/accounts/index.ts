@@ -7,6 +7,7 @@
  */
 
 export * from "./buyerEntry";
+export * from "./compoundState";
 export * from "./config";
 export * from "./lpPosition";
 export * from "./lpVault";

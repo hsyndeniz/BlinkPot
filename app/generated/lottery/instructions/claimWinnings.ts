@@ -63,6 +63,7 @@ export type ClaimWinningsInstruction<
   TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
   TAccountWinnerTokenAccount extends string | AccountMeta<string> = string,
   TAccountReferrerAccount extends string | AccountMeta<string> = string,
+  TAccountParentReferrerAccount extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -98,6 +99,9 @@ export type ClaimWinningsInstruction<
       TAccountReferrerAccount extends string
         ? WritableAccount<TAccountReferrerAccount>
         : TAccountReferrerAccount,
+      TAccountParentReferrerAccount extends string
+        ? WritableAccount<TAccountParentReferrerAccount>
+        : TAccountParentReferrerAccount,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -144,6 +148,7 @@ export type ClaimWinningsAsyncInput<
   TAccountPrizeVaultAuthority extends string = string,
   TAccountWinnerTokenAccount extends string = string,
   TAccountReferrerAccount extends string = string,
+  TAccountParentReferrerAccount extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   owner: TransactionSigner<TAccountOwner>;
@@ -155,6 +160,7 @@ export type ClaimWinningsAsyncInput<
   prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
   winnerTokenAccount: Address<TAccountWinnerTokenAccount>;
   referrerAccount?: Address<TAccountReferrerAccount>;
+  parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -168,6 +174,7 @@ export async function getClaimWinningsInstructionAsync<
   TAccountPrizeVaultAuthority extends string,
   TAccountWinnerTokenAccount extends string,
   TAccountReferrerAccount extends string,
+  TAccountParentReferrerAccount extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
@@ -181,6 +188,7 @@ export async function getClaimWinningsInstructionAsync<
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -196,6 +204,7 @@ export async function getClaimWinningsInstructionAsync<
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram
   >
 > {
@@ -219,6 +228,10 @@ export async function getClaimWinningsInstructionAsync<
       isWritable: true,
     },
     referrerAccount: { value: input.referrerAccount ?? null, isWritable: true },
+    parentReferrerAccount: {
+      value: input.parentReferrerAccount ?? null,
+      isWritable: true,
+    },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -255,6 +268,7 @@ export async function getClaimWinningsInstructionAsync<
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.winnerTokenAccount),
       getAccountMeta(accounts.referrerAccount),
+      getAccountMeta(accounts.parentReferrerAccount),
       getAccountMeta(accounts.tokenProgram),
     ],
     data: getClaimWinningsInstructionDataEncoder().encode({}),
@@ -270,6 +284,7 @@ export async function getClaimWinningsInstructionAsync<
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram
   >);
 }
@@ -284,6 +299,7 @@ export type ClaimWinningsInput<
   TAccountPrizeVaultAuthority extends string = string,
   TAccountWinnerTokenAccount extends string = string,
   TAccountReferrerAccount extends string = string,
+  TAccountParentReferrerAccount extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   owner: TransactionSigner<TAccountOwner>;
@@ -295,6 +311,7 @@ export type ClaimWinningsInput<
   prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
   winnerTokenAccount: Address<TAccountWinnerTokenAccount>;
   referrerAccount?: Address<TAccountReferrerAccount>;
+  parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -308,6 +325,7 @@ export function getClaimWinningsInstruction<
   TAccountPrizeVaultAuthority extends string,
   TAccountWinnerTokenAccount extends string,
   TAccountReferrerAccount extends string,
+  TAccountParentReferrerAccount extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
@@ -321,6 +339,7 @@ export function getClaimWinningsInstruction<
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -335,6 +354,7 @@ export function getClaimWinningsInstruction<
   TAccountPrizeVaultAuthority,
   TAccountWinnerTokenAccount,
   TAccountReferrerAccount,
+  TAccountParentReferrerAccount,
   TAccountTokenProgram
 > {
   // Program address.
@@ -357,6 +377,10 @@ export function getClaimWinningsInstruction<
       isWritable: true,
     },
     referrerAccount: { value: input.referrerAccount ?? null, isWritable: true },
+    parentReferrerAccount: {
+      value: input.parentReferrerAccount ?? null,
+      isWritable: true,
+    },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -382,6 +406,7 @@ export function getClaimWinningsInstruction<
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.winnerTokenAccount),
       getAccountMeta(accounts.referrerAccount),
+      getAccountMeta(accounts.parentReferrerAccount),
       getAccountMeta(accounts.tokenProgram),
     ],
     data: getClaimWinningsInstructionDataEncoder().encode({}),
@@ -397,6 +422,7 @@ export function getClaimWinningsInstruction<
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram
   >);
 }
@@ -416,7 +442,8 @@ export type ParsedClaimWinningsInstruction<
     prizeVaultAuthority: TAccountMetas[6];
     winnerTokenAccount: TAccountMetas[7];
     referrerAccount?: TAccountMetas[8] | undefined;
-    tokenProgram: TAccountMetas[9];
+    parentReferrerAccount?: TAccountMetas[9] | undefined;
+    tokenProgram: TAccountMetas[10];
   };
   data: ClaimWinningsInstructionData;
 };
@@ -429,7 +456,7 @@ export function parseClaimWinningsInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedClaimWinningsInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 10) {
+  if (instruction.accounts.length < 11) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -457,6 +484,7 @@ export function parseClaimWinningsInstruction<
       prizeVaultAuthority: getNextAccount(),
       winnerTokenAccount: getNextAccount(),
       referrerAccount: getNextOptionalAccount(),
+      parentReferrerAccount: getNextOptionalAccount(),
       tokenProgram: getNextAccount(),
     },
     data: getClaimWinningsInstructionDataDecoder().decode(instruction.data),

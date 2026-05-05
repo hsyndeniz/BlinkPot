@@ -10,6 +10,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -45,17 +47,15 @@ import {
   type ResolvedAccount,
 } from "../shared";
 
-export const TALLY_TIER_POOLS_DISCRIMINATOR = new Uint8Array([
-  113, 194, 96, 116, 219, 247, 174, 14,
+export const TALLY_ROUND_DISCRIMINATOR = new Uint8Array([
+  176, 99, 204, 229, 229, 240, 167, 240,
 ]);
 
-export function getTallyTierPoolsDiscriminatorBytes() {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(
-    TALLY_TIER_POOLS_DISCRIMINATOR,
-  );
+export function getTallyRoundDiscriminatorBytes() {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(TALLY_ROUND_DISCRIMINATOR);
 }
 
-export type TallyTierPoolsInstruction<
+export type TallyRoundInstruction<
   TProgram extends string = typeof LOTTERY_PROGRAM_ADDRESS,
   TAccountTrigger extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
@@ -108,36 +108,41 @@ export type TallyTierPoolsInstruction<
     ]
   >;
 
-export type TallyTierPoolsInstructionData = {
+export type TallyRoundInstructionData = {
   discriminator: ReadonlyUint8Array;
+  finalize: boolean;
 };
 
-export type TallyTierPoolsInstructionDataArgs = {};
+export type TallyRoundInstructionDataArgs = { finalize: boolean };
 
-export function getTallyTierPoolsInstructionDataEncoder(): FixedSizeEncoder<TallyTierPoolsInstructionDataArgs> {
+export function getTallyRoundInstructionDataEncoder(): FixedSizeEncoder<TallyRoundInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
-    (value) => ({ ...value, discriminator: TALLY_TIER_POOLS_DISCRIMINATOR }),
+    getStructEncoder([
+      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["finalize", getBooleanEncoder()],
+    ]),
+    (value) => ({ ...value, discriminator: TALLY_ROUND_DISCRIMINATOR }),
   );
 }
 
-export function getTallyTierPoolsInstructionDataDecoder(): FixedSizeDecoder<TallyTierPoolsInstructionData> {
+export function getTallyRoundInstructionDataDecoder(): FixedSizeDecoder<TallyRoundInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["finalize", getBooleanDecoder()],
   ]);
 }
 
-export function getTallyTierPoolsInstructionDataCodec(): FixedSizeCodec<
-  TallyTierPoolsInstructionDataArgs,
-  TallyTierPoolsInstructionData
+export function getTallyRoundInstructionDataCodec(): FixedSizeCodec<
+  TallyRoundInstructionDataArgs,
+  TallyRoundInstructionData
 > {
   return combineCodec(
-    getTallyTierPoolsInstructionDataEncoder(),
-    getTallyTierPoolsInstructionDataDecoder(),
+    getTallyRoundInstructionDataEncoder(),
+    getTallyRoundInstructionDataDecoder(),
   );
 }
 
-export type TallyTierPoolsAsyncInput<
+export type TallyRoundAsyncInput<
   TAccountTrigger extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
@@ -159,9 +164,10 @@ export type TallyTierPoolsAsyncInput<
   lpPrincipal?: Address<TAccountLpPrincipal>;
   lpAuthority?: Address<TAccountLpAuthority>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  finalize: TallyRoundInstructionDataArgs["finalize"];
 };
 
-export async function getTallyTierPoolsInstructionAsync<
+export async function getTallyRoundInstructionAsync<
   TAccountTrigger extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
@@ -174,7 +180,7 @@ export async function getTallyTierPoolsInstructionAsync<
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
-  input: TallyTierPoolsAsyncInput<
+  input: TallyRoundAsyncInput<
     TAccountTrigger,
     TAccountConfig,
     TAccountRound,
@@ -188,7 +194,7 @@ export async function getTallyTierPoolsInstructionAsync<
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  TallyTierPoolsInstruction<
+  TallyRoundInstruction<
     TProgramAddress,
     TAccountTrigger,
     TAccountConfig,
@@ -225,6 +231,9 @@ export async function getTallyTierPoolsInstructionAsync<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
+
+  // Original args.
+  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.config.value) {
@@ -268,9 +277,11 @@ export async function getTallyTierPoolsInstructionAsync<
       getAccountMeta(accounts.lpAuthority),
       getAccountMeta(accounts.tokenProgram),
     ],
-    data: getTallyTierPoolsInstructionDataEncoder().encode({}),
+    data: getTallyRoundInstructionDataEncoder().encode(
+      args as TallyRoundInstructionDataArgs,
+    ),
     programAddress,
-  } as TallyTierPoolsInstruction<
+  } as TallyRoundInstruction<
     TProgramAddress,
     TAccountTrigger,
     TAccountConfig,
@@ -285,7 +296,7 @@ export async function getTallyTierPoolsInstructionAsync<
   >);
 }
 
-export type TallyTierPoolsInput<
+export type TallyRoundInput<
   TAccountTrigger extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
@@ -307,9 +318,10 @@ export type TallyTierPoolsInput<
   lpPrincipal: Address<TAccountLpPrincipal>;
   lpAuthority: Address<TAccountLpAuthority>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  finalize: TallyRoundInstructionDataArgs["finalize"];
 };
 
-export function getTallyTierPoolsInstruction<
+export function getTallyRoundInstruction<
   TAccountTrigger extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
@@ -322,7 +334,7 @@ export function getTallyTierPoolsInstruction<
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
-  input: TallyTierPoolsInput<
+  input: TallyRoundInput<
     TAccountTrigger,
     TAccountConfig,
     TAccountRound,
@@ -335,7 +347,7 @@ export function getTallyTierPoolsInstruction<
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): TallyTierPoolsInstruction<
+): TallyRoundInstruction<
   TProgramAddress,
   TAccountTrigger,
   TAccountConfig,
@@ -372,6 +384,9 @@ export function getTallyTierPoolsInstruction<
     ResolvedAccount
   >;
 
+  // Original args.
+  const args = { ...input };
+
   // Resolve default values.
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -392,9 +407,11 @@ export function getTallyTierPoolsInstruction<
       getAccountMeta(accounts.lpAuthority),
       getAccountMeta(accounts.tokenProgram),
     ],
-    data: getTallyTierPoolsInstructionDataEncoder().encode({}),
+    data: getTallyRoundInstructionDataEncoder().encode(
+      args as TallyRoundInstructionDataArgs,
+    ),
     programAddress,
-  } as TallyTierPoolsInstruction<
+  } as TallyRoundInstruction<
     TProgramAddress,
     TAccountTrigger,
     TAccountConfig,
@@ -409,7 +426,7 @@ export function getTallyTierPoolsInstruction<
   >);
 }
 
-export type ParsedTallyTierPoolsInstruction<
+export type ParsedTallyRoundInstruction<
   TProgram extends string = typeof LOTTERY_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
@@ -426,17 +443,17 @@ export type ParsedTallyTierPoolsInstruction<
     lpAuthority: TAccountMetas[8];
     tokenProgram: TAccountMetas[9];
   };
-  data: TallyTierPoolsInstructionData;
+  data: TallyRoundInstructionData;
 };
 
-export function parseTallyTierPoolsInstruction<
+export function parseTallyRoundInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedTallyTierPoolsInstruction<TProgram, TAccountMetas> {
+): ParsedTallyRoundInstruction<TProgram, TAccountMetas> {
   if (instruction.accounts.length < 10) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
@@ -461,6 +478,6 @@ export function parseTallyTierPoolsInstruction<
       lpAuthority: getNextAccount(),
       tokenProgram: getNextAccount(),
     },
-    data: getTallyTierPoolsInstructionDataDecoder().decode(instruction.data),
+    data: getTallyRoundInstructionDataDecoder().decode(instruction.data),
   };
 }

@@ -23,6 +23,7 @@ import {
   parseClaimReferralFeesInstruction,
   parseClaimWinningsInstruction,
   parseCommitDrawInstruction,
+  parseCompoundWinningsInstruction,
   parseEmergencyLpWithdrawInstruction,
   parseEmergencyRefundTicketInstruction,
   parseEnterRoundEmergencyInstruction,
@@ -32,14 +33,12 @@ import {
   parseLpFinalizeWithdrawInstruction,
   parseLpInitiateWithdrawInstruction,
   parseProcessSubscriptionInstruction,
-  parseRegisterWinnerInstruction,
-  parseRegisterWinnersBatchInstruction,
   parseRevealDrawInstruction,
   parseSetEmergencyModeInstruction,
   parseSetPausedInstruction,
   parseStartRoundInstruction,
   parseSubscribeDailyInstruction,
-  parseTallyTierPoolsInstruction,
+  parseTallyRoundInstruction,
   parseUpdateConfigInstruction,
   type ParsedArchiveRoundInstruction,
   type ParsedBuyTicketsInstruction,
@@ -47,6 +46,7 @@ import {
   type ParsedClaimReferralFeesInstruction,
   type ParsedClaimWinningsInstruction,
   type ParsedCommitDrawInstruction,
+  type ParsedCompoundWinningsInstruction,
   type ParsedEmergencyLpWithdrawInstruction,
   type ParsedEmergencyRefundTicketInstruction,
   type ParsedEnterRoundEmergencyInstruction,
@@ -56,14 +56,12 @@ import {
   type ParsedLpFinalizeWithdrawInstruction,
   type ParsedLpInitiateWithdrawInstruction,
   type ParsedProcessSubscriptionInstruction,
-  type ParsedRegisterWinnerInstruction,
-  type ParsedRegisterWinnersBatchInstruction,
   type ParsedRevealDrawInstruction,
   type ParsedSetEmergencyModeInstruction,
   type ParsedSetPausedInstruction,
   type ParsedStartRoundInstruction,
   type ParsedSubscribeDailyInstruction,
-  type ParsedTallyTierPoolsInstruction,
+  type ParsedTallyRoundInstruction,
   type ParsedUpdateConfigInstruction,
 } from "../instructions";
 
@@ -72,6 +70,7 @@ export const LOTTERY_PROGRAM_ADDRESS =
 
 export enum LotteryAccount {
   BuyerEntry,
+  CompoundState,
   Config,
   LpPosition,
   LpVault,
@@ -96,6 +95,17 @@ export function identifyLotteryAccount(
     )
   ) {
     return LotteryAccount.BuyerEntry;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([216, 68, 127, 186, 34, 162, 238, 155]),
+      ),
+      0,
+    )
+  ) {
+    return LotteryAccount.CompoundState;
   }
   if (
     containsBytes(
@@ -197,6 +207,7 @@ export enum LotteryInstruction {
   ClaimReferralFees,
   ClaimWinnings,
   CommitDraw,
+  CompoundWinnings,
   EmergencyLpWithdraw,
   EmergencyRefundTicket,
   EnterRoundEmergency,
@@ -206,14 +217,12 @@ export enum LotteryInstruction {
   LpFinalizeWithdraw,
   LpInitiateWithdraw,
   ProcessSubscription,
-  RegisterWinner,
-  RegisterWinnersBatch,
   RevealDraw,
   SetEmergencyMode,
   SetPaused,
   StartRound,
   SubscribeDaily,
-  TallyTierPools,
+  TallyRound,
   UpdateConfig,
 }
 
@@ -286,6 +295,17 @@ export function identifyLotteryInstruction(
     )
   ) {
     return LotteryInstruction.CommitDraw;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([119, 96, 183, 91, 122, 112, 45, 56]),
+      ),
+      0,
+    )
+  ) {
+    return LotteryInstruction.CompoundWinnings;
   }
   if (
     containsBytes(
@@ -390,28 +410,6 @@ export function identifyLotteryInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([136, 123, 88, 19, 249, 124, 0, 168]),
-      ),
-      0,
-    )
-  ) {
-    return LotteryInstruction.RegisterWinner;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([131, 57, 183, 38, 220, 164, 182, 229]),
-      ),
-      0,
-    )
-  ) {
-    return LotteryInstruction.RegisterWinnersBatch;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([13, 149, 75, 226, 184, 105, 114, 48]),
       ),
       0,
@@ -467,12 +465,12 @@ export function identifyLotteryInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([113, 194, 96, 116, 219, 247, 174, 14]),
+        new Uint8Array([176, 99, 204, 229, 229, 240, 167, 240]),
       ),
       0,
     )
   ) {
-    return LotteryInstruction.TallyTierPools;
+    return LotteryInstruction.TallyRound;
   }
   if (
     containsBytes(
@@ -512,6 +510,9 @@ export type ParsedLotteryInstruction<
       instructionType: LotteryInstruction.CommitDraw;
     } & ParsedCommitDrawInstruction<TProgram>)
   | ({
+      instructionType: LotteryInstruction.CompoundWinnings;
+    } & ParsedCompoundWinningsInstruction<TProgram>)
+  | ({
       instructionType: LotteryInstruction.EmergencyLpWithdraw;
     } & ParsedEmergencyLpWithdrawInstruction<TProgram>)
   | ({
@@ -539,12 +540,6 @@ export type ParsedLotteryInstruction<
       instructionType: LotteryInstruction.ProcessSubscription;
     } & ParsedProcessSubscriptionInstruction<TProgram>)
   | ({
-      instructionType: LotteryInstruction.RegisterWinner;
-    } & ParsedRegisterWinnerInstruction<TProgram>)
-  | ({
-      instructionType: LotteryInstruction.RegisterWinnersBatch;
-    } & ParsedRegisterWinnersBatchInstruction<TProgram>)
-  | ({
       instructionType: LotteryInstruction.RevealDraw;
     } & ParsedRevealDrawInstruction<TProgram>)
   | ({
@@ -560,8 +555,8 @@ export type ParsedLotteryInstruction<
       instructionType: LotteryInstruction.SubscribeDaily;
     } & ParsedSubscribeDailyInstruction<TProgram>)
   | ({
-      instructionType: LotteryInstruction.TallyTierPools;
-    } & ParsedTallyTierPoolsInstruction<TProgram>)
+      instructionType: LotteryInstruction.TallyRound;
+    } & ParsedTallyRoundInstruction<TProgram>)
   | ({
       instructionType: LotteryInstruction.UpdateConfig;
     } & ParsedUpdateConfigInstruction<TProgram>);
@@ -611,6 +606,13 @@ export function parseLotteryInstruction<TProgram extends string>(
       return {
         instructionType: LotteryInstruction.CommitDraw,
         ...parseCommitDrawInstruction(instruction),
+      };
+    }
+    case LotteryInstruction.CompoundWinnings: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: LotteryInstruction.CompoundWinnings,
+        ...parseCompoundWinningsInstruction(instruction),
       };
     }
     case LotteryInstruction.EmergencyLpWithdraw: {
@@ -676,20 +678,6 @@ export function parseLotteryInstruction<TProgram extends string>(
         ...parseProcessSubscriptionInstruction(instruction),
       };
     }
-    case LotteryInstruction.RegisterWinner: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: LotteryInstruction.RegisterWinner,
-        ...parseRegisterWinnerInstruction(instruction),
-      };
-    }
-    case LotteryInstruction.RegisterWinnersBatch: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: LotteryInstruction.RegisterWinnersBatch,
-        ...parseRegisterWinnersBatchInstruction(instruction),
-      };
-    }
     case LotteryInstruction.RevealDraw: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -725,11 +713,11 @@ export function parseLotteryInstruction<TProgram extends string>(
         ...parseSubscribeDailyInstruction(instruction),
       };
     }
-    case LotteryInstruction.TallyTierPools: {
+    case LotteryInstruction.TallyRound: {
       assertIsInstructionWithAccounts(instruction);
       return {
-        instructionType: LotteryInstruction.TallyTierPools,
-        ...parseTallyTierPoolsInstruction(instruction),
+        instructionType: LotteryInstruction.TallyRound,
+        ...parseTallyRoundInstruction(instruction),
       };
     }
     case LotteryInstruction.UpdateConfig: {

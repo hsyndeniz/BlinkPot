@@ -10,6 +10,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -52,6 +54,7 @@ export type InitializeReferralInstruction<
   TProgram extends string = typeof LOTTERY_PROGRAM_ADDRESS,
   TAccountReferrer extends string | AccountMeta<string> = string,
   TAccountReferral extends string | AccountMeta<string> = string,
+  TAccountParentReferral extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -66,6 +69,9 @@ export type InitializeReferralInstruction<
       TAccountReferral extends string
         ? WritableAccount<TAccountReferral>
         : TAccountReferral,
+      TAccountParentReferral extends string
+        ? ReadonlyAccount<TAccountParentReferral>
+        : TAccountParentReferral,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -75,13 +81,17 @@ export type InitializeReferralInstruction<
 
 export type InitializeReferralInstructionData = {
   discriminator: ReadonlyUint8Array;
+  parentReferrer: Address;
 };
 
-export type InitializeReferralInstructionDataArgs = {};
+export type InitializeReferralInstructionDataArgs = { parentReferrer: Address };
 
 export function getInitializeReferralInstructionDataEncoder(): FixedSizeEncoder<InitializeReferralInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    getStructEncoder([
+      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["parentReferrer", getAddressEncoder()],
+    ]),
     (value) => ({ ...value, discriminator: INITIALIZE_REFERRAL_DISCRIMINATOR }),
   );
 }
@@ -89,6 +99,7 @@ export function getInitializeReferralInstructionDataEncoder(): FixedSizeEncoder<
 export function getInitializeReferralInstructionDataDecoder(): FixedSizeDecoder<InitializeReferralInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["parentReferrer", getAddressDecoder()],
   ]);
 }
 
@@ -105,22 +116,31 @@ export function getInitializeReferralInstructionDataCodec(): FixedSizeCodec<
 export type InitializeReferralAsyncInput<
   TAccountReferrer extends string = string,
   TAccountReferral extends string = string,
+  TAccountParentReferral extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   referrer: TransactionSigner<TAccountReferrer>;
   referral?: Address<TAccountReferral>;
+  /**
+   * Parent's Referral PDA. Required if `parent_referrer != Pubkey::default()`,
+   * validating that the upstream chain actually exists.
+   */
+  parentReferral?: Address<TAccountParentReferral>;
   systemProgram?: Address<TAccountSystemProgram>;
+  parentReferrer: InitializeReferralInstructionDataArgs["parentReferrer"];
 };
 
 export async function getInitializeReferralInstructionAsync<
   TAccountReferrer extends string,
   TAccountReferral extends string,
+  TAccountParentReferral extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
   input: InitializeReferralAsyncInput<
     TAccountReferrer,
     TAccountReferral,
+    TAccountParentReferral,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -129,6 +149,7 @@ export async function getInitializeReferralInstructionAsync<
     TProgramAddress,
     TAccountReferrer,
     TAccountReferral,
+    TAccountParentReferral,
     TAccountSystemProgram
   >
 > {
@@ -139,12 +160,16 @@ export async function getInitializeReferralInstructionAsync<
   const originalAccounts = {
     referrer: { value: input.referrer ?? null, isWritable: true },
     referral: { value: input.referral ?? null, isWritable: true },
+    parentReferral: { value: input.parentReferral ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
+
+  // Original args.
+  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.referral.value) {
@@ -162,14 +187,18 @@ export async function getInitializeReferralInstructionAsync<
     accounts: [
       getAccountMeta(accounts.referrer),
       getAccountMeta(accounts.referral),
+      getAccountMeta(accounts.parentReferral),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getInitializeReferralInstructionDataEncoder().encode({}),
+    data: getInitializeReferralInstructionDataEncoder().encode(
+      args as InitializeReferralInstructionDataArgs,
+    ),
     programAddress,
   } as InitializeReferralInstruction<
     TProgramAddress,
     TAccountReferrer,
     TAccountReferral,
+    TAccountParentReferral,
     TAccountSystemProgram
   >);
 }
@@ -177,22 +206,31 @@ export async function getInitializeReferralInstructionAsync<
 export type InitializeReferralInput<
   TAccountReferrer extends string = string,
   TAccountReferral extends string = string,
+  TAccountParentReferral extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   referrer: TransactionSigner<TAccountReferrer>;
   referral: Address<TAccountReferral>;
+  /**
+   * Parent's Referral PDA. Required if `parent_referrer != Pubkey::default()`,
+   * validating that the upstream chain actually exists.
+   */
+  parentReferral?: Address<TAccountParentReferral>;
   systemProgram?: Address<TAccountSystemProgram>;
+  parentReferrer: InitializeReferralInstructionDataArgs["parentReferrer"];
 };
 
 export function getInitializeReferralInstruction<
   TAccountReferrer extends string,
   TAccountReferral extends string,
+  TAccountParentReferral extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
   input: InitializeReferralInput<
     TAccountReferrer,
     TAccountReferral,
+    TAccountParentReferral,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -200,6 +238,7 @@ export function getInitializeReferralInstruction<
   TProgramAddress,
   TAccountReferrer,
   TAccountReferral,
+  TAccountParentReferral,
   TAccountSystemProgram
 > {
   // Program address.
@@ -209,12 +248,16 @@ export function getInitializeReferralInstruction<
   const originalAccounts = {
     referrer: { value: input.referrer ?? null, isWritable: true },
     referral: { value: input.referral ?? null, isWritable: true },
+    parentReferral: { value: input.parentReferral ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
+
+  // Original args.
+  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.systemProgram.value) {
@@ -227,14 +270,18 @@ export function getInitializeReferralInstruction<
     accounts: [
       getAccountMeta(accounts.referrer),
       getAccountMeta(accounts.referral),
+      getAccountMeta(accounts.parentReferral),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getInitializeReferralInstructionDataEncoder().encode({}),
+    data: getInitializeReferralInstructionDataEncoder().encode(
+      args as InitializeReferralInstructionDataArgs,
+    ),
     programAddress,
   } as InitializeReferralInstruction<
     TProgramAddress,
     TAccountReferrer,
     TAccountReferral,
+    TAccountParentReferral,
     TAccountSystemProgram
   >);
 }
@@ -247,7 +294,12 @@ export type ParsedInitializeReferralInstruction<
   accounts: {
     referrer: TAccountMetas[0];
     referral: TAccountMetas[1];
-    systemProgram: TAccountMetas[2];
+    /**
+     * Parent's Referral PDA. Required if `parent_referrer != Pubkey::default()`,
+     * validating that the upstream chain actually exists.
+     */
+    parentReferral?: TAccountMetas[2] | undefined;
+    systemProgram: TAccountMetas[3];
   };
   data: InitializeReferralInstructionData;
 };
@@ -260,7 +312,7 @@ export function parseInitializeReferralInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitializeReferralInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+  if (instruction.accounts.length < 4) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -270,11 +322,18 @@ export function parseInitializeReferralInstruction<
     accountIndex += 1;
     return accountMeta;
   };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === LOTTERY_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
+  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
       referrer: getNextAccount(),
       referral: getNextAccount(),
+      parentReferral: getNextOptionalAccount(),
       systemProgram: getNextAccount(),
     },
     data: getInitializeReferralInstructionDataDecoder().decode(

@@ -10,20 +10,28 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
+  getArrayDecoder,
+  getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getOptionDecoder,
+  getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
+  type Option,
+  type OptionOrNullable,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
@@ -31,6 +39,7 @@ import {
   type WritableSignerAccount,
 } from "@solana/kit";
 import {
+  findCompoundStatePda,
   findConfigPda,
   findLpAuthorityPda,
   findLpPrincipalPda,
@@ -44,52 +53,63 @@ import {
   getAccountMetaFactory,
   type ResolvedAccount,
 } from "../shared";
+import {
+  getTicketPickDecoder,
+  getTicketPickEncoder,
+  type TicketPick,
+  type TicketPickArgs,
+} from "../types";
 
-export const EMERGENCY_REFUND_TICKET_DISCRIMINATOR = new Uint8Array([
-  245, 142, 98, 13, 101, 210, 97, 152,
+export const COMPOUND_WINNINGS_DISCRIMINATOR = new Uint8Array([
+  119, 96, 183, 91, 122, 112, 45, 56,
 ]);
 
-export function getEmergencyRefundTicketDiscriminatorBytes() {
+export function getCompoundWinningsDiscriminatorBytes() {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    EMERGENCY_REFUND_TICKET_DISCRIMINATOR,
+    COMPOUND_WINNINGS_DISCRIMINATOR,
   );
 }
 
-export type EmergencyRefundTicketInstruction<
+export type CompoundWinningsInstruction<
   TProgram extends string = typeof LOTTERY_PROGRAM_ADDRESS,
-  TAccountOwner extends string | AccountMeta<string> = string,
+  TAccountBuyer extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
-  TAccountTicket extends string | AccountMeta<string> = string,
+  TAccountSourceRound extends string | AccountMeta<string> = string,
   TAccountUsdcMint extends string | AccountMeta<string> = string,
   TAccountPrizeVault extends string | AccountMeta<string> = string,
   TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
   TAccountLpVault extends string | AccountMeta<string> = string,
-  TAccountLpPrincipal extends string | AccountMeta<string> = string,
   TAccountLpAuthority extends string | AccountMeta<string> = string,
+  TAccountLpPrincipal extends string | AccountMeta<string> = string,
+  TAccountBuyerEntry extends string | AccountMeta<string> = string,
+  TAccountCompoundState extends string | AccountMeta<string> = string,
   TAccountReferrerAccount extends string | AccountMeta<string> = string,
   TAccountParentReferrerAccount extends string | AccountMeta<string> = string,
-  TAccountOwnerTokenAccount extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  TAccountSystemProgram extends string | AccountMeta<string> =
+    "11111111111111111111111111111111",
+  TAccountRent extends string | AccountMeta<string> =
+    "SysvarRent111111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
-      TAccountOwner extends string
-        ? WritableSignerAccount<TAccountOwner> &
-            AccountSignerMeta<TAccountOwner>
-        : TAccountOwner,
+      TAccountBuyer extends string
+        ? WritableSignerAccount<TAccountBuyer> &
+            AccountSignerMeta<TAccountBuyer>
+        : TAccountBuyer,
       TAccountConfig extends string
         ? ReadonlyAccount<TAccountConfig>
         : TAccountConfig,
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
         : TAccountRound,
-      TAccountTicket extends string
-        ? WritableAccount<TAccountTicket>
-        : TAccountTicket,
+      TAccountSourceRound extends string
+        ? WritableAccount<TAccountSourceRound>
+        : TAccountSourceRound,
       TAccountUsdcMint extends string
         ? ReadonlyAccount<TAccountUsdcMint>
         : TAccountUsdcMint,
@@ -102,143 +122,179 @@ export type EmergencyRefundTicketInstruction<
       TAccountLpVault extends string
         ? WritableAccount<TAccountLpVault>
         : TAccountLpVault,
-      TAccountLpPrincipal extends string
-        ? WritableAccount<TAccountLpPrincipal>
-        : TAccountLpPrincipal,
       TAccountLpAuthority extends string
         ? ReadonlyAccount<TAccountLpAuthority>
         : TAccountLpAuthority,
+      TAccountLpPrincipal extends string
+        ? WritableAccount<TAccountLpPrincipal>
+        : TAccountLpPrincipal,
+      TAccountBuyerEntry extends string
+        ? WritableAccount<TAccountBuyerEntry>
+        : TAccountBuyerEntry,
+      TAccountCompoundState extends string
+        ? WritableAccount<TAccountCompoundState>
+        : TAccountCompoundState,
       TAccountReferrerAccount extends string
         ? WritableAccount<TAccountReferrerAccount>
         : TAccountReferrerAccount,
       TAccountParentReferrerAccount extends string
         ? WritableAccount<TAccountParentReferrerAccount>
         : TAccountParentReferrerAccount,
-      TAccountOwnerTokenAccount extends string
-        ? WritableAccount<TAccountOwnerTokenAccount>
-        : TAccountOwnerTokenAccount,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
+      TAccountSystemProgram extends string
+        ? ReadonlyAccount<TAccountSystemProgram>
+        : TAccountSystemProgram,
+      TAccountRent extends string
+        ? ReadonlyAccount<TAccountRent>
+        : TAccountRent,
       ...TRemainingAccounts,
     ]
   >;
 
-export type EmergencyRefundTicketInstructionData = {
+export type CompoundWinningsInstructionData = {
   discriminator: ReadonlyUint8Array;
+  picks: Array<TicketPick>;
+  referrer: Option<Address>;
 };
 
-export type EmergencyRefundTicketInstructionDataArgs = {};
+export type CompoundWinningsInstructionDataArgs = {
+  picks: Array<TicketPickArgs>;
+  referrer: OptionOrNullable<Address>;
+};
 
-export function getEmergencyRefundTicketInstructionDataEncoder(): FixedSizeEncoder<EmergencyRefundTicketInstructionDataArgs> {
+export function getCompoundWinningsInstructionDataEncoder(): Encoder<CompoundWinningsInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
-    (value) => ({
-      ...value,
-      discriminator: EMERGENCY_REFUND_TICKET_DISCRIMINATOR,
-    }),
+    getStructEncoder([
+      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["picks", getArrayEncoder(getTicketPickEncoder())],
+      ["referrer", getOptionEncoder(getAddressEncoder())],
+    ]),
+    (value) => ({ ...value, discriminator: COMPOUND_WINNINGS_DISCRIMINATOR }),
   );
 }
 
-export function getEmergencyRefundTicketInstructionDataDecoder(): FixedSizeDecoder<EmergencyRefundTicketInstructionData> {
+export function getCompoundWinningsInstructionDataDecoder(): Decoder<CompoundWinningsInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["picks", getArrayDecoder(getTicketPickDecoder())],
+    ["referrer", getOptionDecoder(getAddressDecoder())],
   ]);
 }
 
-export function getEmergencyRefundTicketInstructionDataCodec(): FixedSizeCodec<
-  EmergencyRefundTicketInstructionDataArgs,
-  EmergencyRefundTicketInstructionData
+export function getCompoundWinningsInstructionDataCodec(): Codec<
+  CompoundWinningsInstructionDataArgs,
+  CompoundWinningsInstructionData
 > {
   return combineCodec(
-    getEmergencyRefundTicketInstructionDataEncoder(),
-    getEmergencyRefundTicketInstructionDataDecoder(),
+    getCompoundWinningsInstructionDataEncoder(),
+    getCompoundWinningsInstructionDataDecoder(),
   );
 }
 
-export type EmergencyRefundTicketAsyncInput<
-  TAccountOwner extends string = string,
+export type CompoundWinningsAsyncInput<
+  TAccountBuyer extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
-  TAccountTicket extends string = string,
+  TAccountSourceRound extends string = string,
   TAccountUsdcMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountLpVault extends string = string,
-  TAccountLpPrincipal extends string = string,
   TAccountLpAuthority extends string = string,
+  TAccountLpPrincipal extends string = string,
+  TAccountBuyerEntry extends string = string,
+  TAccountCompoundState extends string = string,
   TAccountReferrerAccount extends string = string,
   TAccountParentReferrerAccount extends string = string,
-  TAccountOwnerTokenAccount extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountSystemProgram extends string = string,
+  TAccountRent extends string = string,
 > = {
-  owner: TransactionSigner<TAccountOwner>;
+  buyer: TransactionSigner<TAccountBuyer>;
   config?: Address<TAccountConfig>;
+  /** The round currently open for buying. */
   round: Address<TAccountRound>;
-  ticket: Address<TAccountTicket>;
+  /** The settled (Claimable) round whose winning tickets are being compounded. */
+  sourceRound: Address<TAccountSourceRound>;
   usdcMint: Address<TAccountUsdcMint>;
   prizeVault?: Address<TAccountPrizeVault>;
   prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
   lpVault?: Address<TAccountLpVault>;
-  lpPrincipal?: Address<TAccountLpPrincipal>;
   lpAuthority?: Address<TAccountLpAuthority>;
+  lpPrincipal?: Address<TAccountLpPrincipal>;
+  buyerEntry: Address<TAccountBuyerEntry>;
+  compoundState?: Address<TAccountCompoundState>;
   referrerAccount?: Address<TAccountReferrerAccount>;
   parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
-  ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  systemProgram?: Address<TAccountSystemProgram>;
+  rent?: Address<TAccountRent>;
+  picks: CompoundWinningsInstructionDataArgs["picks"];
+  referrer: CompoundWinningsInstructionDataArgs["referrer"];
 };
 
-export async function getEmergencyRefundTicketInstructionAsync<
-  TAccountOwner extends string,
+export async function getCompoundWinningsInstructionAsync<
+  TAccountBuyer extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
-  TAccountTicket extends string,
+  TAccountSourceRound extends string,
   TAccountUsdcMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountLpVault extends string,
-  TAccountLpPrincipal extends string,
   TAccountLpAuthority extends string,
+  TAccountLpPrincipal extends string,
+  TAccountBuyerEntry extends string,
+  TAccountCompoundState extends string,
   TAccountReferrerAccount extends string,
   TAccountParentReferrerAccount extends string,
-  TAccountOwnerTokenAccount extends string,
   TAccountTokenProgram extends string,
+  TAccountSystemProgram extends string,
+  TAccountRent extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
-  input: EmergencyRefundTicketAsyncInput<
-    TAccountOwner,
+  input: CompoundWinningsAsyncInput<
+    TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountTicket,
+    TAccountSourceRound,
     TAccountUsdcMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
-    TAccountLpPrincipal,
     TAccountLpAuthority,
+    TAccountLpPrincipal,
+    TAccountBuyerEntry,
+    TAccountCompoundState,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountOwnerTokenAccount,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountSystemProgram,
+    TAccountRent
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  EmergencyRefundTicketInstruction<
+  CompoundWinningsInstruction<
     TProgramAddress,
-    TAccountOwner,
+    TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountTicket,
+    TAccountSourceRound,
     TAccountUsdcMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
-    TAccountLpPrincipal,
     TAccountLpAuthority,
+    TAccountLpPrincipal,
+    TAccountBuyerEntry,
+    TAccountCompoundState,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountOwnerTokenAccount,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountSystemProgram,
+    TAccountRent
   >
 > {
   // Program address.
@@ -246,10 +302,10 @@ export async function getEmergencyRefundTicketInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: true },
+    buyer: { value: input.buyer ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
-    ticket: { value: input.ticket ?? null, isWritable: true },
+    sourceRound: { value: input.sourceRound ?? null, isWritable: true },
     usdcMint: { value: input.usdcMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
@@ -257,23 +313,26 @@ export async function getEmergencyRefundTicketInstructionAsync<
       isWritable: false,
     },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
-    lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
+    lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
+    buyerEntry: { value: input.buyerEntry ?? null, isWritable: true },
+    compoundState: { value: input.compoundState ?? null, isWritable: true },
     referrerAccount: { value: input.referrerAccount ?? null, isWritable: true },
     parentReferrerAccount: {
       value: input.parentReferrerAccount ?? null,
       isWritable: true,
     },
-    ownerTokenAccount: {
-      value: input.ownerTokenAccount ?? null,
-      isWritable: true,
-    },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    rent: { value: input.rent ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
+
+  // Original args.
+  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.config.value) {
@@ -290,150 +349,190 @@ export async function getEmergencyRefundTicketInstructionAsync<
   if (!accounts.lpVault.value) {
     accounts.lpVault.value = await findLpVaultPda();
   }
+  if (!accounts.lpAuthority.value) {
+    accounts.lpAuthority.value = await findLpAuthorityPda();
+  }
   if (!accounts.lpPrincipal.value) {
     accounts.lpPrincipal.value = await findLpPrincipalPda({
       usdcMint: expectAddress(accounts.usdcMint.value),
     });
   }
-  if (!accounts.lpAuthority.value) {
-    accounts.lpAuthority.value = await findLpAuthorityPda();
+  if (!accounts.compoundState.value) {
+    accounts.compoundState.value = await findCompoundStatePda({
+      buyer: expectAddress(accounts.buyer.value),
+    });
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  }
+  if (!accounts.rent.value) {
+    accounts.rent.value =
+      "SysvarRent111111111111111111111111111111111" as Address<"SysvarRent111111111111111111111111111111111">;
+  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta(accounts.owner),
+      getAccountMeta(accounts.buyer),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
-      getAccountMeta(accounts.ticket),
+      getAccountMeta(accounts.sourceRound),
       getAccountMeta(accounts.usdcMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.lpVault),
-      getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.lpAuthority),
+      getAccountMeta(accounts.lpPrincipal),
+      getAccountMeta(accounts.buyerEntry),
+      getAccountMeta(accounts.compoundState),
       getAccountMeta(accounts.referrerAccount),
       getAccountMeta(accounts.parentReferrerAccount),
-      getAccountMeta(accounts.ownerTokenAccount),
       getAccountMeta(accounts.tokenProgram),
+      getAccountMeta(accounts.systemProgram),
+      getAccountMeta(accounts.rent),
     ],
-    data: getEmergencyRefundTicketInstructionDataEncoder().encode({}),
+    data: getCompoundWinningsInstructionDataEncoder().encode(
+      args as CompoundWinningsInstructionDataArgs,
+    ),
     programAddress,
-  } as EmergencyRefundTicketInstruction<
+  } as CompoundWinningsInstruction<
     TProgramAddress,
-    TAccountOwner,
+    TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountTicket,
+    TAccountSourceRound,
     TAccountUsdcMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
-    TAccountLpPrincipal,
     TAccountLpAuthority,
+    TAccountLpPrincipal,
+    TAccountBuyerEntry,
+    TAccountCompoundState,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountOwnerTokenAccount,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountSystemProgram,
+    TAccountRent
   >);
 }
 
-export type EmergencyRefundTicketInput<
-  TAccountOwner extends string = string,
+export type CompoundWinningsInput<
+  TAccountBuyer extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
-  TAccountTicket extends string = string,
+  TAccountSourceRound extends string = string,
   TAccountUsdcMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountLpVault extends string = string,
-  TAccountLpPrincipal extends string = string,
   TAccountLpAuthority extends string = string,
+  TAccountLpPrincipal extends string = string,
+  TAccountBuyerEntry extends string = string,
+  TAccountCompoundState extends string = string,
   TAccountReferrerAccount extends string = string,
   TAccountParentReferrerAccount extends string = string,
-  TAccountOwnerTokenAccount extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountSystemProgram extends string = string,
+  TAccountRent extends string = string,
 > = {
-  owner: TransactionSigner<TAccountOwner>;
+  buyer: TransactionSigner<TAccountBuyer>;
   config: Address<TAccountConfig>;
+  /** The round currently open for buying. */
   round: Address<TAccountRound>;
-  ticket: Address<TAccountTicket>;
+  /** The settled (Claimable) round whose winning tickets are being compounded. */
+  sourceRound: Address<TAccountSourceRound>;
   usdcMint: Address<TAccountUsdcMint>;
   prizeVault: Address<TAccountPrizeVault>;
   prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
   lpVault: Address<TAccountLpVault>;
-  lpPrincipal: Address<TAccountLpPrincipal>;
   lpAuthority: Address<TAccountLpAuthority>;
+  lpPrincipal: Address<TAccountLpPrincipal>;
+  buyerEntry: Address<TAccountBuyerEntry>;
+  compoundState: Address<TAccountCompoundState>;
   referrerAccount?: Address<TAccountReferrerAccount>;
   parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
-  ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  systemProgram?: Address<TAccountSystemProgram>;
+  rent?: Address<TAccountRent>;
+  picks: CompoundWinningsInstructionDataArgs["picks"];
+  referrer: CompoundWinningsInstructionDataArgs["referrer"];
 };
 
-export function getEmergencyRefundTicketInstruction<
-  TAccountOwner extends string,
+export function getCompoundWinningsInstruction<
+  TAccountBuyer extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
-  TAccountTicket extends string,
+  TAccountSourceRound extends string,
   TAccountUsdcMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountLpVault extends string,
-  TAccountLpPrincipal extends string,
   TAccountLpAuthority extends string,
+  TAccountLpPrincipal extends string,
+  TAccountBuyerEntry extends string,
+  TAccountCompoundState extends string,
   TAccountReferrerAccount extends string,
   TAccountParentReferrerAccount extends string,
-  TAccountOwnerTokenAccount extends string,
   TAccountTokenProgram extends string,
+  TAccountSystemProgram extends string,
+  TAccountRent extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
-  input: EmergencyRefundTicketInput<
-    TAccountOwner,
+  input: CompoundWinningsInput<
+    TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountTicket,
+    TAccountSourceRound,
     TAccountUsdcMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
-    TAccountLpPrincipal,
     TAccountLpAuthority,
+    TAccountLpPrincipal,
+    TAccountBuyerEntry,
+    TAccountCompoundState,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountOwnerTokenAccount,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountSystemProgram,
+    TAccountRent
   >,
   config?: { programAddress?: TProgramAddress },
-): EmergencyRefundTicketInstruction<
+): CompoundWinningsInstruction<
   TProgramAddress,
-  TAccountOwner,
+  TAccountBuyer,
   TAccountConfig,
   TAccountRound,
-  TAccountTicket,
+  TAccountSourceRound,
   TAccountUsdcMint,
   TAccountPrizeVault,
   TAccountPrizeVaultAuthority,
   TAccountLpVault,
-  TAccountLpPrincipal,
   TAccountLpAuthority,
+  TAccountLpPrincipal,
+  TAccountBuyerEntry,
+  TAccountCompoundState,
   TAccountReferrerAccount,
   TAccountParentReferrerAccount,
-  TAccountOwnerTokenAccount,
-  TAccountTokenProgram
+  TAccountTokenProgram,
+  TAccountSystemProgram,
+  TAccountRent
 > {
   // Program address.
   const programAddress = config?.programAddress ?? LOTTERY_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: true },
+    buyer: { value: input.buyer ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
-    ticket: { value: input.ticket ?? null, isWritable: true },
+    sourceRound: { value: input.sourceRound ?? null, isWritable: true },
     usdcMint: { value: input.usdcMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
@@ -441,102 +540,126 @@ export function getEmergencyRefundTicketInstruction<
       isWritable: false,
     },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
-    lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
+    lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
+    buyerEntry: { value: input.buyerEntry ?? null, isWritable: true },
+    compoundState: { value: input.compoundState ?? null, isWritable: true },
     referrerAccount: { value: input.referrerAccount ?? null, isWritable: true },
     parentReferrerAccount: {
       value: input.parentReferrerAccount ?? null,
       isWritable: true,
     },
-    ownerTokenAccount: {
-      value: input.ownerTokenAccount ?? null,
-      isWritable: true,
-    },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    rent: { value: input.rent ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
 
+  // Original args.
+  const args = { ...input };
+
   // Resolve default values.
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  }
+  if (!accounts.rent.value) {
+    accounts.rent.value =
+      "SysvarRent111111111111111111111111111111111" as Address<"SysvarRent111111111111111111111111111111111">;
+  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta(accounts.owner),
+      getAccountMeta(accounts.buyer),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
-      getAccountMeta(accounts.ticket),
+      getAccountMeta(accounts.sourceRound),
       getAccountMeta(accounts.usdcMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.lpVault),
-      getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.lpAuthority),
+      getAccountMeta(accounts.lpPrincipal),
+      getAccountMeta(accounts.buyerEntry),
+      getAccountMeta(accounts.compoundState),
       getAccountMeta(accounts.referrerAccount),
       getAccountMeta(accounts.parentReferrerAccount),
-      getAccountMeta(accounts.ownerTokenAccount),
       getAccountMeta(accounts.tokenProgram),
+      getAccountMeta(accounts.systemProgram),
+      getAccountMeta(accounts.rent),
     ],
-    data: getEmergencyRefundTicketInstructionDataEncoder().encode({}),
+    data: getCompoundWinningsInstructionDataEncoder().encode(
+      args as CompoundWinningsInstructionDataArgs,
+    ),
     programAddress,
-  } as EmergencyRefundTicketInstruction<
+  } as CompoundWinningsInstruction<
     TProgramAddress,
-    TAccountOwner,
+    TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountTicket,
+    TAccountSourceRound,
     TAccountUsdcMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
-    TAccountLpPrincipal,
     TAccountLpAuthority,
+    TAccountLpPrincipal,
+    TAccountBuyerEntry,
+    TAccountCompoundState,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountOwnerTokenAccount,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountSystemProgram,
+    TAccountRent
   >);
 }
 
-export type ParsedEmergencyRefundTicketInstruction<
+export type ParsedCompoundWinningsInstruction<
   TProgram extends string = typeof LOTTERY_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    owner: TAccountMetas[0];
+    buyer: TAccountMetas[0];
     config: TAccountMetas[1];
+    /** The round currently open for buying. */
     round: TAccountMetas[2];
-    ticket: TAccountMetas[3];
+    /** The settled (Claimable) round whose winning tickets are being compounded. */
+    sourceRound: TAccountMetas[3];
     usdcMint: TAccountMetas[4];
     prizeVault: TAccountMetas[5];
     prizeVaultAuthority: TAccountMetas[6];
     lpVault: TAccountMetas[7];
-    lpPrincipal: TAccountMetas[8];
-    lpAuthority: TAccountMetas[9];
-    referrerAccount?: TAccountMetas[10] | undefined;
-    parentReferrerAccount?: TAccountMetas[11] | undefined;
-    ownerTokenAccount: TAccountMetas[12];
-    tokenProgram: TAccountMetas[13];
+    lpAuthority: TAccountMetas[8];
+    lpPrincipal: TAccountMetas[9];
+    buyerEntry: TAccountMetas[10];
+    compoundState: TAccountMetas[11];
+    referrerAccount?: TAccountMetas[12] | undefined;
+    parentReferrerAccount?: TAccountMetas[13] | undefined;
+    tokenProgram: TAccountMetas[14];
+    systemProgram: TAccountMetas[15];
+    rent: TAccountMetas[16];
   };
-  data: EmergencyRefundTicketInstructionData;
+  data: CompoundWinningsInstructionData;
 };
 
-export function parseEmergencyRefundTicketInstruction<
+export function parseCompoundWinningsInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedEmergencyRefundTicketInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 14) {
+): ParsedCompoundWinningsInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 17) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -555,23 +678,24 @@ export function parseEmergencyRefundTicketInstruction<
   return {
     programAddress: instruction.programAddress,
     accounts: {
-      owner: getNextAccount(),
+      buyer: getNextAccount(),
       config: getNextAccount(),
       round: getNextAccount(),
-      ticket: getNextAccount(),
+      sourceRound: getNextAccount(),
       usdcMint: getNextAccount(),
       prizeVault: getNextAccount(),
       prizeVaultAuthority: getNextAccount(),
       lpVault: getNextAccount(),
-      lpPrincipal: getNextAccount(),
       lpAuthority: getNextAccount(),
+      lpPrincipal: getNextAccount(),
+      buyerEntry: getNextAccount(),
+      compoundState: getNextAccount(),
       referrerAccount: getNextOptionalAccount(),
       parentReferrerAccount: getNextOptionalAccount(),
-      ownerTokenAccount: getNextAccount(),
       tokenProgram: getNextAccount(),
+      systemProgram: getNextAccount(),
+      rent: getNextAccount(),
     },
-    data: getEmergencyRefundTicketInstructionDataDecoder().decode(
-      instruction.data,
-    ),
+    data: getCompoundWinningsInstructionDataDecoder().decode(instruction.data),
   };
 }

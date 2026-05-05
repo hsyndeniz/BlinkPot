@@ -81,6 +81,7 @@ export type BuyTicketsInstruction<
   TAccountLpPrincipal extends string | AccountMeta<string> = string,
   TAccountBuyerEntry extends string | AccountMeta<string> = string,
   TAccountReferrerAccount extends string | AccountMeta<string> = string,
+  TAccountParentReferrerAccount extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountSystemProgram extends string | AccountMeta<string> =
@@ -129,6 +130,9 @@ export type BuyTicketsInstruction<
       TAccountReferrerAccount extends string
         ? WritableAccount<TAccountReferrerAccount>
         : TAccountReferrerAccount,
+      TAccountParentReferrerAccount extends string
+        ? WritableAccount<TAccountParentReferrerAccount>
+        : TAccountParentReferrerAccount,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -195,6 +199,7 @@ export type BuyTicketsAsyncInput<
   TAccountLpPrincipal extends string = string,
   TAccountBuyerEntry extends string = string,
   TAccountReferrerAccount extends string = string,
+  TAccountParentReferrerAccount extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountRent extends string = string,
@@ -210,7 +215,10 @@ export type BuyTicketsAsyncInput<
   lpAuthority?: Address<TAccountLpAuthority>;
   lpPrincipal?: Address<TAccountLpPrincipal>;
   buyerEntry: Address<TAccountBuyerEntry>;
+  /** First-order referrer's Referral PDA (required if `referrer` is Some). */
   referrerAccount?: Address<TAccountReferrerAccount>;
+  /** Second-order referrer's Referral PDA. Required if first-order's `parent_referrer` is set. */
+  parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   rent?: Address<TAccountRent>;
@@ -231,6 +239,7 @@ export async function getBuyTicketsInstructionAsync<
   TAccountLpPrincipal extends string,
   TAccountBuyerEntry extends string,
   TAccountReferrerAccount extends string,
+  TAccountParentReferrerAccount extends string,
   TAccountTokenProgram extends string,
   TAccountSystemProgram extends string,
   TAccountRent extends string,
@@ -249,6 +258,7 @@ export async function getBuyTicketsInstructionAsync<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -269,6 +279,7 @@ export async function getBuyTicketsInstructionAsync<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -297,6 +308,10 @@ export async function getBuyTicketsInstructionAsync<
     lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     buyerEntry: { value: input.buyerEntry ?? null, isWritable: true },
     referrerAccount: { value: input.referrerAccount ?? null, isWritable: true },
+    parentReferrerAccount: {
+      value: input.parentReferrerAccount ?? null,
+      isWritable: true,
+    },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
     rent: { value: input.rent ?? null, isWritable: false },
@@ -360,6 +375,7 @@ export async function getBuyTicketsInstructionAsync<
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.buyerEntry),
       getAccountMeta(accounts.referrerAccount),
+      getAccountMeta(accounts.parentReferrerAccount),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.systemProgram),
       getAccountMeta(accounts.rent),
@@ -382,6 +398,7 @@ export async function getBuyTicketsInstructionAsync<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -401,6 +418,7 @@ export type BuyTicketsInput<
   TAccountLpPrincipal extends string = string,
   TAccountBuyerEntry extends string = string,
   TAccountReferrerAccount extends string = string,
+  TAccountParentReferrerAccount extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountRent extends string = string,
@@ -416,7 +434,10 @@ export type BuyTicketsInput<
   lpAuthority: Address<TAccountLpAuthority>;
   lpPrincipal: Address<TAccountLpPrincipal>;
   buyerEntry: Address<TAccountBuyerEntry>;
+  /** First-order referrer's Referral PDA (required if `referrer` is Some). */
   referrerAccount?: Address<TAccountReferrerAccount>;
+  /** Second-order referrer's Referral PDA. Required if first-order's `parent_referrer` is set. */
+  parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   rent?: Address<TAccountRent>;
@@ -437,6 +458,7 @@ export function getBuyTicketsInstruction<
   TAccountLpPrincipal extends string,
   TAccountBuyerEntry extends string,
   TAccountReferrerAccount extends string,
+  TAccountParentReferrerAccount extends string,
   TAccountTokenProgram extends string,
   TAccountSystemProgram extends string,
   TAccountRent extends string,
@@ -455,6 +477,7 @@ export function getBuyTicketsInstruction<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -474,6 +497,7 @@ export function getBuyTicketsInstruction<
   TAccountLpPrincipal,
   TAccountBuyerEntry,
   TAccountReferrerAccount,
+  TAccountParentReferrerAccount,
   TAccountTokenProgram,
   TAccountSystemProgram,
   TAccountRent
@@ -501,6 +525,10 @@ export function getBuyTicketsInstruction<
     lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     buyerEntry: { value: input.buyerEntry ?? null, isWritable: true },
     referrerAccount: { value: input.referrerAccount ?? null, isWritable: true },
+    parentReferrerAccount: {
+      value: input.parentReferrerAccount ?? null,
+      isWritable: true,
+    },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
     rent: { value: input.rent ?? null, isWritable: false },
@@ -542,6 +570,7 @@ export function getBuyTicketsInstruction<
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.buyerEntry),
       getAccountMeta(accounts.referrerAccount),
+      getAccountMeta(accounts.parentReferrerAccount),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.systemProgram),
       getAccountMeta(accounts.rent),
@@ -564,6 +593,7 @@ export function getBuyTicketsInstruction<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -587,10 +617,13 @@ export type ParsedBuyTicketsInstruction<
     lpAuthority: TAccountMetas[8];
     lpPrincipal: TAccountMetas[9];
     buyerEntry: TAccountMetas[10];
+    /** First-order referrer's Referral PDA (required if `referrer` is Some). */
     referrerAccount?: TAccountMetas[11] | undefined;
-    tokenProgram: TAccountMetas[12];
-    systemProgram: TAccountMetas[13];
-    rent: TAccountMetas[14];
+    /** Second-order referrer's Referral PDA. Required if first-order's `parent_referrer` is set. */
+    parentReferrerAccount?: TAccountMetas[12] | undefined;
+    tokenProgram: TAccountMetas[13];
+    systemProgram: TAccountMetas[14];
+    rent: TAccountMetas[15];
   };
   data: BuyTicketsInstructionData;
 };
@@ -603,7 +636,7 @@ export function parseBuyTicketsInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedBuyTicketsInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 15) {
+  if (instruction.accounts.length < 16) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -634,6 +667,7 @@ export function parseBuyTicketsInstruction<
       lpPrincipal: getNextAccount(),
       buyerEntry: getNextAccount(),
       referrerAccount: getNextOptionalAccount(),
+      parentReferrerAccount: getNextOptionalAccount(),
       tokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
       rent: getNextAccount(),

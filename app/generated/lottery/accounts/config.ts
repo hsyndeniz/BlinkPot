@@ -72,17 +72,24 @@ export type Config = {
   emergencyMode: boolean;
   defaultTicketPrice: bigint;
   defaultRoundDurationSecs: bigint;
-  registerWindowSecs: bigint;
   guaranteedPrizePool: bigint;
+  maxGuaranteePerRoundBps: number;
   drawTimeoutSlots: bigint;
   normalBallMax: number;
   bonusballMax: number;
   lpEdgeBps: number;
-  referralFeeBps: number;
-  referralWinShareBps: number;
+  referralFeeFirstBps: number;
+  referralFeeSecondBps: number;
+  referralWinShareFirstBps: number;
+  referralWinShareSecondBps: number;
   lpPoolCap: bigint;
-  tierPayoutBps: Array<number>;
+  tierPremiumWeightBps: Array<number>;
+  tierMinPayoutPerWinner: Array<bigint>;
+  premiumMinAllocationBps: number;
   untakenTierDestination: UntakenTierDestination;
+  dynamicBonusballEnabled: boolean;
+  bonusballBase: number;
+  bonusballPoolStepUsdc: bigint;
 };
 
 export type ConfigArgs = {
@@ -95,17 +102,24 @@ export type ConfigArgs = {
   emergencyMode: boolean;
   defaultTicketPrice: number | bigint;
   defaultRoundDurationSecs: number | bigint;
-  registerWindowSecs: number | bigint;
   guaranteedPrizePool: number | bigint;
+  maxGuaranteePerRoundBps: number;
   drawTimeoutSlots: number | bigint;
   normalBallMax: number;
   bonusballMax: number;
   lpEdgeBps: number;
-  referralFeeBps: number;
-  referralWinShareBps: number;
+  referralFeeFirstBps: number;
+  referralFeeSecondBps: number;
+  referralWinShareFirstBps: number;
+  referralWinShareSecondBps: number;
   lpPoolCap: number | bigint;
-  tierPayoutBps: Array<number>;
+  tierPremiumWeightBps: Array<number>;
+  tierMinPayoutPerWinner: Array<number | bigint>;
+  premiumMinAllocationBps: number;
   untakenTierDestination: UntakenTierDestinationArgs;
+  dynamicBonusballEnabled: boolean;
+  bonusballBase: number;
+  bonusballPoolStepUsdc: number | bigint;
 };
 
 /** Gets the encoder for {@link ConfigArgs} account data. */
@@ -122,17 +136,27 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
       ["emergencyMode", getBooleanEncoder()],
       ["defaultTicketPrice", getU64Encoder()],
       ["defaultRoundDurationSecs", getI64Encoder()],
-      ["registerWindowSecs", getI64Encoder()],
       ["guaranteedPrizePool", getU64Encoder()],
+      ["maxGuaranteePerRoundBps", getU16Encoder()],
       ["drawTimeoutSlots", getU64Encoder()],
       ["normalBallMax", getU8Encoder()],
       ["bonusballMax", getU8Encoder()],
       ["lpEdgeBps", getU16Encoder()],
-      ["referralFeeBps", getU16Encoder()],
-      ["referralWinShareBps", getU16Encoder()],
+      ["referralFeeFirstBps", getU16Encoder()],
+      ["referralFeeSecondBps", getU16Encoder()],
+      ["referralWinShareFirstBps", getU16Encoder()],
+      ["referralWinShareSecondBps", getU16Encoder()],
       ["lpPoolCap", getU64Encoder()],
-      ["tierPayoutBps", getArrayEncoder(getU16Encoder(), { size: 12 })],
+      ["tierPremiumWeightBps", getArrayEncoder(getU16Encoder(), { size: 12 })],
+      [
+        "tierMinPayoutPerWinner",
+        getArrayEncoder(getU64Encoder(), { size: 12 }),
+      ],
+      ["premiumMinAllocationBps", getU16Encoder()],
       ["untakenTierDestination", getUntakenTierDestinationEncoder()],
+      ["dynamicBonusballEnabled", getBooleanEncoder()],
+      ["bonusballBase", getU8Encoder()],
+      ["bonusballPoolStepUsdc", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: CONFIG_DISCRIMINATOR }),
   );
@@ -151,17 +175,24 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
     ["emergencyMode", getBooleanDecoder()],
     ["defaultTicketPrice", getU64Decoder()],
     ["defaultRoundDurationSecs", getI64Decoder()],
-    ["registerWindowSecs", getI64Decoder()],
     ["guaranteedPrizePool", getU64Decoder()],
+    ["maxGuaranteePerRoundBps", getU16Decoder()],
     ["drawTimeoutSlots", getU64Decoder()],
     ["normalBallMax", getU8Decoder()],
     ["bonusballMax", getU8Decoder()],
     ["lpEdgeBps", getU16Decoder()],
-    ["referralFeeBps", getU16Decoder()],
-    ["referralWinShareBps", getU16Decoder()],
+    ["referralFeeFirstBps", getU16Decoder()],
+    ["referralFeeSecondBps", getU16Decoder()],
+    ["referralWinShareFirstBps", getU16Decoder()],
+    ["referralWinShareSecondBps", getU16Decoder()],
     ["lpPoolCap", getU64Decoder()],
-    ["tierPayoutBps", getArrayDecoder(getU16Decoder(), { size: 12 })],
+    ["tierPremiumWeightBps", getArrayDecoder(getU16Decoder(), { size: 12 })],
+    ["tierMinPayoutPerWinner", getArrayDecoder(getU64Decoder(), { size: 12 })],
+    ["premiumMinAllocationBps", getU16Decoder()],
     ["untakenTierDestination", getUntakenTierDestinationDecoder()],
+    ["dynamicBonusballEnabled", getBooleanDecoder()],
+    ["bonusballBase", getU8Decoder()],
+    ["bonusballPoolStepUsdc", getU64Decoder()],
   ]);
 }
 
@@ -224,5 +255,5 @@ export async function fetchAllMaybeConfig(
 }
 
 export function getConfigSize(): number {
-  return 158;
+  return 264;
 }

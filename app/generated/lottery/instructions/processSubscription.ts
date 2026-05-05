@@ -81,6 +81,7 @@ export type ProcessSubscriptionInstruction<
   TAccountLpPrincipal extends string | AccountMeta<string> = string,
   TAccountBuyerEntry extends string | AccountMeta<string> = string,
   TAccountReferrerAccount extends string | AccountMeta<string> = string,
+  TAccountParentReferrerAccount extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountSystemProgram extends string | AccountMeta<string> =
@@ -135,6 +136,9 @@ export type ProcessSubscriptionInstruction<
       TAccountReferrerAccount extends string
         ? WritableAccount<TAccountReferrerAccount>
         : TAccountReferrerAccount,
+      TAccountParentReferrerAccount extends string
+        ? WritableAccount<TAccountParentReferrerAccount>
+        : TAccountParentReferrerAccount,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -202,6 +206,7 @@ export type ProcessSubscriptionAsyncInput<
   TAccountLpPrincipal extends string = string,
   TAccountBuyerEntry extends string = string,
   TAccountReferrerAccount extends string = string,
+  TAccountParentReferrerAccount extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountRent extends string = string,
@@ -220,6 +225,7 @@ export type ProcessSubscriptionAsyncInput<
   lpPrincipal?: Address<TAccountLpPrincipal>;
   buyerEntry: Address<TAccountBuyerEntry>;
   referrerAccount?: Address<TAccountReferrerAccount>;
+  parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   rent?: Address<TAccountRent>;
@@ -241,6 +247,7 @@ export async function getProcessSubscriptionInstructionAsync<
   TAccountLpPrincipal extends string,
   TAccountBuyerEntry extends string,
   TAccountReferrerAccount extends string,
+  TAccountParentReferrerAccount extends string,
   TAccountTokenProgram extends string,
   TAccountSystemProgram extends string,
   TAccountRent extends string,
@@ -261,6 +268,7 @@ export async function getProcessSubscriptionInstructionAsync<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -283,6 +291,7 @@ export async function getProcessSubscriptionInstructionAsync<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -310,6 +319,10 @@ export async function getProcessSubscriptionInstructionAsync<
     lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     buyerEntry: { value: input.buyerEntry ?? null, isWritable: true },
     referrerAccount: { value: input.referrerAccount ?? null, isWritable: true },
+    parentReferrerAccount: {
+      value: input.parentReferrerAccount ?? null,
+      isWritable: true,
+    },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
     rent: { value: input.rent ?? null, isWritable: false },
@@ -386,6 +399,7 @@ export async function getProcessSubscriptionInstructionAsync<
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.buyerEntry),
       getAccountMeta(accounts.referrerAccount),
+      getAccountMeta(accounts.parentReferrerAccount),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.systemProgram),
       getAccountMeta(accounts.rent),
@@ -410,6 +424,7 @@ export async function getProcessSubscriptionInstructionAsync<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -431,6 +446,7 @@ export type ProcessSubscriptionInput<
   TAccountLpPrincipal extends string = string,
   TAccountBuyerEntry extends string = string,
   TAccountReferrerAccount extends string = string,
+  TAccountParentReferrerAccount extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountRent extends string = string,
@@ -449,6 +465,7 @@ export type ProcessSubscriptionInput<
   lpPrincipal: Address<TAccountLpPrincipal>;
   buyerEntry: Address<TAccountBuyerEntry>;
   referrerAccount?: Address<TAccountReferrerAccount>;
+  parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   rent?: Address<TAccountRent>;
@@ -470,6 +487,7 @@ export function getProcessSubscriptionInstruction<
   TAccountLpPrincipal extends string,
   TAccountBuyerEntry extends string,
   TAccountReferrerAccount extends string,
+  TAccountParentReferrerAccount extends string,
   TAccountTokenProgram extends string,
   TAccountSystemProgram extends string,
   TAccountRent extends string,
@@ -490,6 +508,7 @@ export function getProcessSubscriptionInstruction<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -511,6 +530,7 @@ export function getProcessSubscriptionInstruction<
   TAccountLpPrincipal,
   TAccountBuyerEntry,
   TAccountReferrerAccount,
+  TAccountParentReferrerAccount,
   TAccountTokenProgram,
   TAccountSystemProgram,
   TAccountRent
@@ -537,6 +557,10 @@ export function getProcessSubscriptionInstruction<
     lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     buyerEntry: { value: input.buyerEntry ?? null, isWritable: true },
     referrerAccount: { value: input.referrerAccount ?? null, isWritable: true },
+    parentReferrerAccount: {
+      value: input.parentReferrerAccount ?? null,
+      isWritable: true,
+    },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
     rent: { value: input.rent ?? null, isWritable: false },
@@ -580,6 +604,7 @@ export function getProcessSubscriptionInstruction<
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.buyerEntry),
       getAccountMeta(accounts.referrerAccount),
+      getAccountMeta(accounts.parentReferrerAccount),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.systemProgram),
       getAccountMeta(accounts.rent),
@@ -604,6 +629,7 @@ export function getProcessSubscriptionInstruction<
     TAccountLpPrincipal,
     TAccountBuyerEntry,
     TAccountReferrerAccount,
+    TAccountParentReferrerAccount,
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountRent
@@ -630,9 +656,10 @@ export type ParsedProcessSubscriptionInstruction<
     lpPrincipal: TAccountMetas[11];
     buyerEntry: TAccountMetas[12];
     referrerAccount?: TAccountMetas[13] | undefined;
-    tokenProgram: TAccountMetas[14];
-    systemProgram: TAccountMetas[15];
-    rent: TAccountMetas[16];
+    parentReferrerAccount?: TAccountMetas[14] | undefined;
+    tokenProgram: TAccountMetas[15];
+    systemProgram: TAccountMetas[16];
+    rent: TAccountMetas[17];
   };
   data: ProcessSubscriptionInstructionData;
 };
@@ -645,7 +672,7 @@ export function parseProcessSubscriptionInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedProcessSubscriptionInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 17) {
+  if (instruction.accounts.length < 18) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -678,6 +705,7 @@ export function parseProcessSubscriptionInstruction<
       lpPrincipal: getNextAccount(),
       buyerEntry: getNextAccount(),
       referrerAccount: getNextOptionalAccount(),
+      parentReferrerAccount: getNextOptionalAccount(),
       tokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
       rent: getNextAccount(),

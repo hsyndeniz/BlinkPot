@@ -17,6 +17,8 @@ import {
   fixEncoderSize,
   getAddressDecoder,
   getAddressEncoder,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -50,15 +52,37 @@ export function getReferralDiscriminatorBytes() {
 export type Referral = {
   discriminator: ReadonlyUint8Array;
   owner: Address;
+  /**
+   * Upstream referrer set when this Referral PDA is initialized. Pubkey::default() means
+   * the referrer has no upstream parent (top of the chain).
+   */
+  parentReferrer: Address;
+  /** Has a non-default parent referrer. */
+  hasParent: boolean;
+  /** Currently claimable balance (sum of unclaimed first- and second-order earnings). */
   accrued: bigint;
-  lifetimeEarned: bigint;
+  /** Lifetime first-order earnings (purchase fees + win share from direct referrals). */
+  lifetimeEarnedFirst: bigint;
+  /** Lifetime second-order earnings (from referrer-of-referrers' activity). */
+  lifetimeEarnedSecond: bigint;
   bump: number;
 };
 
 export type ReferralArgs = {
   owner: Address;
+  /**
+   * Upstream referrer set when this Referral PDA is initialized. Pubkey::default() means
+   * the referrer has no upstream parent (top of the chain).
+   */
+  parentReferrer: Address;
+  /** Has a non-default parent referrer. */
+  hasParent: boolean;
+  /** Currently claimable balance (sum of unclaimed first- and second-order earnings). */
   accrued: number | bigint;
-  lifetimeEarned: number | bigint;
+  /** Lifetime first-order earnings (purchase fees + win share from direct referrals). */
+  lifetimeEarnedFirst: number | bigint;
+  /** Lifetime second-order earnings (from referrer-of-referrers' activity). */
+  lifetimeEarnedSecond: number | bigint;
   bump: number;
 };
 
@@ -68,8 +92,11 @@ export function getReferralEncoder(): FixedSizeEncoder<ReferralArgs> {
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["owner", getAddressEncoder()],
+      ["parentReferrer", getAddressEncoder()],
+      ["hasParent", getBooleanEncoder()],
       ["accrued", getU64Encoder()],
-      ["lifetimeEarned", getU64Encoder()],
+      ["lifetimeEarnedFirst", getU64Encoder()],
+      ["lifetimeEarnedSecond", getU64Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: REFERRAL_DISCRIMINATOR }),
@@ -81,8 +108,11 @@ export function getReferralDecoder(): FixedSizeDecoder<Referral> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["owner", getAddressDecoder()],
+    ["parentReferrer", getAddressDecoder()],
+    ["hasParent", getBooleanDecoder()],
     ["accrued", getU64Decoder()],
-    ["lifetimeEarned", getU64Decoder()],
+    ["lifetimeEarnedFirst", getU64Decoder()],
+    ["lifetimeEarnedSecond", getU64Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -146,5 +176,5 @@ export async function fetchAllMaybeReferral(
 }
 
 export function getReferralSize(): number {
-  return 57;
+  return 98;
 }

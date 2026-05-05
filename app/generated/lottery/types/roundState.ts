@@ -19,7 +19,6 @@ export enum RoundState {
   Open,
   Drawing,
   Settled,
-  Registering,
   Claimable,
   Archived,
   Emergency,

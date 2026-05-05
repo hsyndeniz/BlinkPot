@@ -54,6 +54,10 @@ export type LpVault = {
   totalShares: bigint;
   totalAssets: bigint;
   pendingWithdrawShares: bigint;
+  /** Lifetime LP edge (compounding) earned across all rounds. */
+  lifetimeEdgeEarned: bigint;
+  /** Lifetime jackpot losses absorbed by the LP guarantee mechanism. */
+  lifetimeJackpotLoss: bigint;
 };
 
 export type LpVaultArgs = {
@@ -62,6 +66,10 @@ export type LpVaultArgs = {
   totalShares: number | bigint;
   totalAssets: number | bigint;
   pendingWithdrawShares: number | bigint;
+  /** Lifetime LP edge (compounding) earned across all rounds. */
+  lifetimeEdgeEarned: number | bigint;
+  /** Lifetime jackpot losses absorbed by the LP guarantee mechanism. */
+  lifetimeJackpotLoss: number | bigint;
 };
 
 /** Gets the encoder for {@link LpVaultArgs} account data. */
@@ -74,6 +82,8 @@ export function getLpVaultEncoder(): FixedSizeEncoder<LpVaultArgs> {
       ["totalShares", getU128Encoder()],
       ["totalAssets", getU64Encoder()],
       ["pendingWithdrawShares", getU128Encoder()],
+      ["lifetimeEdgeEarned", getU64Encoder()],
+      ["lifetimeJackpotLoss", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: LP_VAULT_DISCRIMINATOR }),
   );
@@ -88,6 +98,8 @@ export function getLpVaultDecoder(): FixedSizeDecoder<LpVault> {
     ["totalShares", getU128Decoder()],
     ["totalAssets", getU64Decoder()],
     ["pendingWithdrawShares", getU128Decoder()],
+    ["lifetimeEdgeEarned", getU64Decoder()],
+    ["lifetimeJackpotLoss", getU64Decoder()],
   ]);
 }
 
@@ -150,5 +162,5 @@ export async function fetchAllMaybeLpVault(
 }
 
 export function getLpVaultSize(): number {
-  return 50;
+  return 66;
 }
