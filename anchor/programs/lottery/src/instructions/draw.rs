@@ -22,6 +22,38 @@ use crate::math::derive_winning_numbers;
 use crate::state::config::Config;
 use crate::state::round::{Round, RoundState};
 
+pub(crate) fn validate_randomness_commit(
+    seed_slot: u64,
+    reveal_slot: u64,
+    clock_slot: u64,
+) -> Result<()> {
+    require!(reveal_slot == 0, LotteryError::RandomnessAlreadyRevealed);
+    let expected_seed_slot = clock_slot
+        .checked_sub(1)
+        .ok_or(error!(LotteryError::RandomnessExpired))?;
+    require_eq!(
+        seed_slot,
+        expected_seed_slot,
+        LotteryError::RandomnessExpired
+    );
+    Ok(())
+}
+
+pub(crate) fn require_commit_timed_out(
+    commit_slot: u64,
+    timeout_slots: u64,
+    clock_slot: u64,
+) -> Result<()> {
+    let timeout_slot = commit_slot
+        .checked_add(timeout_slots)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    require!(
+        clock_slot > timeout_slot,
+        LotteryError::RandomnessCommitStillActive
+    );
+    Ok(())
+}
+
 #[derive(Accounts)]
 pub struct CommitDraw<'info> {
     pub trigger: Signer<'info>,
@@ -42,13 +74,26 @@ pub struct CommitDraw<'info> {
 
 pub fn commit_draw(ctx: Context<CommitDraw>) -> Result<()> {
     require!(!ctx.accounts.config.paused, LotteryError::Paused);
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
 
-    let now = Clock::get()?.unix_timestamp;
+    let clock = Clock::get()?;
+    let now = clock.unix_timestamp;
     let round = &mut ctx.accounts.round;
 
-    require!(round.is_open(), LotteryError::RoundNotOpen);
-    require!(now >= round.draw_time, LotteryError::DrawTimeNotReached);
+    if round.is_open() {
+        require!(now >= round.draw_time, LotteryError::DrawTimeNotReached);
+    } else if round.is_drawing() {
+        require_commit_timed_out(
+            round.commit_slot,
+            ctx.accounts.config.draw_timeout_slots,
+            clock.slot,
+        )?;
+    } else {
+        return Err(error!(LotteryError::RoundNotOpen));
+    }
 
     // Verify the randomness account is owned by the expected Switchboard On-Demand
     // program (devnet or mainnet, selected at compile time via the `devnet` feature).
@@ -69,15 +114,11 @@ pub fn commit_draw(ctx: Context<CommitDraw>) -> Result<()> {
     // `clock.slot == reveal_slot`, so it would also return an error for an account
     // that was *already revealed* in a past slot — letting an attacker reuse a
     // randomness account whose value they already know and front-run the outcome.
-    require!(
-        randomness.reveal_slot == 0,
-        LotteryError::RandomnessAlreadyRevealed
-    );
-
     // Store seed_slot from the randomness account rather than the current clock slot.
     // This is the slot whose hash Switchboard will use as entropy — we need to verify
     // this exact value again in reveal_draw to ensure the same commitment is being revealed.
     let seed_slot = randomness.seed_slot;
+    validate_randomness_commit(seed_slot, randomness.reveal_slot, clock.slot)?;
 
     round.state = RoundState::Drawing;
     round.randomness_account = ctx.accounts.randomness_account.key();
@@ -89,6 +130,29 @@ pub fn commit_draw(ctx: Context<CommitDraw>) -> Result<()> {
         commit_slot: seed_slot,
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commit_randomness_requires_previous_slot() {
+        validate_randomness_commit(41, 0, 42).unwrap();
+        assert!(validate_randomness_commit(40, 0, 42).is_err());
+        assert!(validate_randomness_commit(42, 0, 42).is_err());
+    }
+
+    #[test]
+    fn commit_randomness_rejects_revealed_accounts() {
+        assert!(validate_randomness_commit(41, 42, 42).is_err());
+    }
+
+    #[test]
+    fn commit_timeout_is_strictly_after_timeout_slot() {
+        assert!(require_commit_timed_out(100, 10, 110).is_err());
+        require_commit_timed_out(100, 10, 111).unwrap();
+    }
 }
 
 #[derive(Accounts)]
@@ -110,13 +174,22 @@ pub struct RevealDraw<'info> {
 }
 
 pub fn reveal_draw(ctx: Context<RevealDraw>) -> Result<()> {
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
 
     let round = &mut ctx.accounts.round;
     require!(round.is_drawing(), LotteryError::RoundNotDrawing);
     require_keys_eq!(
         ctx.accounts.randomness_account.key(),
         round.randomness_account,
+        LotteryError::InvalidRandomnessAccount
+    );
+
+    let owner = *ctx.accounts.randomness_account.owner;
+    require!(
+        owner == EXPECTED_SB_PID,
         LotteryError::InvalidRandomnessAccount
     );
 
@@ -144,11 +217,8 @@ pub fn reveal_draw(ctx: Context<RevealDraw>) -> Result<()> {
     let len = revealed.len().min(32);
     bytes[..len].copy_from_slice(&revealed[..len]);
 
-    let (normals, bonusball) = derive_winning_numbers(
-        &bytes,
-        round.normal_ball_max,
-        round.bonusball_max,
-    )?;
+    let (normals, bonusball) =
+        derive_winning_numbers(&bytes, round.normal_ball_max, round.bonusball_max)?;
 
     round.winning_normals = normals;
     round.winning_bonusball = bonusball;

@@ -1,17 +1,19 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
-    BUYER_ENTRY_SEED, CONFIG_SEED, MAX_DAILY_TICKETS_PER_SUB, MAX_DAYS_PER_SUBSCRIPTION,
-    MAX_TICKETS_PER_BATCH, PRIZE_VAULT_TOKEN_SEED, REFERRAL_SEED, ROUND_SEED, SUBSCRIPTION_SEED,
-    SUB_ESCROW_SEED, TICKET_SEED,
+    BUYER_ENTRY_SEED, CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
+    MAX_DAILY_TICKETS_PER_SUB, MAX_DAYS_PER_SUBSCRIPTION, MAX_TICKETS_PER_BATCH,
+    PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED, REFERRAL_SEED, ROUND_SEED,
+    SUBSCRIPTION_SEED, SUB_ESCROW_SEED, TICKET_SEED,
 };
 use crate::errors::LotteryError;
 use crate::events::{SubscriptionCanceled, SubscriptionCreated, SubscriptionProcessed};
 use crate::math::{bps_amount, validate_pick};
 use crate::state::buyer_entry::BuyerEntry;
 use crate::state::config::Config;
+use crate::state::lp::LpVault;
 use crate::state::referral::Referral;
 use crate::state::round::Round;
 use crate::state::subscription::Subscription;
@@ -54,6 +56,9 @@ pub struct SubscribeDaily<'info> {
     )]
     pub sub_escrow: Box<Account<'info, TokenAccount>>,
 
+    #[account(mut)]
+    pub referrer_account: Option<Box<Account<'info, Referral>>>,
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
@@ -66,7 +71,10 @@ pub fn subscribe_daily(
     referrer: Option<Pubkey>,
 ) -> Result<()> {
     require!(!ctx.accounts.config.paused, LotteryError::Paused);
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
     require!(
         daily_ticket_count > 0 && daily_ticket_count <= MAX_DAILY_TICKETS_PER_SUB,
         LotteryError::InvalidSubscription
@@ -75,6 +83,24 @@ pub fn subscribe_daily(
         days > 0 && days <= MAX_DAYS_PER_SUBSCRIPTION,
         LotteryError::InvalidSubscription
     );
+
+    if let Some(r) = referrer {
+        require_keys_neq!(r, ctx.accounts.owner.key(), LotteryError::SelfReferral);
+        let ra = ctx
+            .accounts
+            .referrer_account
+            .as_ref()
+            .ok_or(error!(LotteryError::ReferralRequired))?;
+        let (expected_pda, _) =
+            Pubkey::find_program_address(&[REFERRAL_SEED, r.as_ref()], ctx.program_id);
+        require_keys_eq!(ra.key(), expected_pda, LotteryError::InvalidConfig);
+        require_keys_eq!(ra.owner, r, LotteryError::InvalidConfig);
+    } else {
+        require!(
+            ctx.accounts.referrer_account.is_none(),
+            LotteryError::InvalidConfig
+        );
+    }
 
     // Re-create path safety: this instruction may run against an existing
     // subscription PDA (init_if_needed). Only allow if not active and the
@@ -103,16 +129,18 @@ pub fn subscribe_daily(
         .and_then(|n| n.checked_mul(agreed_price))
         .ok_or(error!(LotteryError::MathOverflow))?;
 
-    token::transfer(
+    token::transfer_checked(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
-            Transfer {
+            TransferChecked {
                 from: ctx.accounts.owner_token_account.to_account_info(),
+                mint: ctx.accounts.usdc_mint.to_account_info(),
                 to: ctx.accounts.sub_escrow.to_account_info(),
                 authority: ctx.accounts.owner.to_account_info(),
             },
         ),
         total_amount,
+        ctx.accounts.usdc_mint.decimals,
     )?;
 
     let now = Clock::get()?.unix_timestamp;
@@ -175,6 +203,8 @@ pub struct ProcessSubscription<'info> {
         mut,
         seeds = [SUB_ESCROW_SEED, owner.key().as_ref(), usdc_mint.key().as_ref()],
         bump = subscription.escrow_bump,
+        token::mint = usdc_mint,
+        token::authority = subscription,
     )]
     pub sub_escrow: Box<Account<'info, TokenAccount>>,
 
@@ -182,8 +212,34 @@ pub struct ProcessSubscription<'info> {
         mut,
         seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
         bump,
+        token::mint = usdc_mint,
+        token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: PDA authority for prize_vault.
+    #[account(seeds = [PRIZE_VAULT_AUTHORITY_SEED], bump = config.prize_vault_authority_bump)]
+    pub prize_vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [LP_VAULT_SEED],
+        bump = lp_vault.bump,
+    )]
+    pub lp_vault: Box<Account<'info, LpVault>>,
+
+    /// CHECK: PDA authority for lp_principal.
+    #[account(seeds = [LP_AUTHORITY_SEED], bump = config.lp_authority_bump)]
+    pub lp_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = lp_authority,
+    )]
+    pub lp_principal: Box<Account<'info, TokenAccount>>,
 
     #[account(
         init_if_needed,
@@ -207,14 +263,23 @@ pub fn process_subscription<'info>(
     picks: Vec<TicketPick>,
 ) -> Result<()> {
     require!(!ctx.accounts.config.paused, LotteryError::Paused);
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
 
     let subscription = &mut ctx.accounts.subscription;
     require!(subscription.active, LotteryError::SubscriptionInactive);
 
     let now = Clock::get()?.unix_timestamp;
-    require!(now < subscription.expires_at, LotteryError::SubscriptionInactive);
-    require!(subscription.remaining_days > 0, LotteryError::SubscriptionInactive);
+    require!(
+        now < subscription.expires_at,
+        LotteryError::SubscriptionInactive
+    );
+    require!(
+        subscription.remaining_days > 0,
+        LotteryError::SubscriptionInactive
+    );
 
     let round = &mut ctx.accounts.round;
     require!(round.is_open(), LotteryError::RoundNotOpen);
@@ -234,7 +299,7 @@ pub fn process_subscription<'info>(
             .accounts
             .referrer_account
             .as_ref()
-            .ok_or(error!(LotteryError::InvalidConfig))?;
+            .ok_or(error!(LotteryError::ReferralRequired))?;
         let (expected_pda, _) = Pubkey::find_program_address(
             &[REFERRAL_SEED, subscription.referrer.as_ref()],
             ctx.program_id,
@@ -242,7 +307,10 @@ pub fn process_subscription<'info>(
         require_keys_eq!(ra.key(), expected_pda, LotteryError::InvalidConfig);
         require_keys_eq!(ra.owner, subscription.referrer, LotteryError::InvalidConfig);
     } else {
-        require!(ctx.accounts.referrer_account.is_none(), LotteryError::InvalidConfig);
+        require!(
+            ctx.accounts.referrer_account.is_none(),
+            LotteryError::InvalidConfig
+        );
     }
 
     require!(
@@ -282,8 +350,9 @@ pub fn process_subscription<'info>(
     let lp_edge_total = lp_edge_per
         .checked_mul(count)
         .ok_or(error!(LotteryError::MathOverflow))?;
-    let pool_contribution = total_paid
+    let ticket_prize_contribution = total_paid
         .checked_sub(referral_fee_total)
+        .and_then(|n| n.checked_sub(lp_edge_total))
         .ok_or(error!(LotteryError::MathOverflow))?;
 
     let buyer_entry = &mut ctx.accounts.buyer_entry;
@@ -292,7 +361,11 @@ pub fn process_subscription<'info>(
         buyer_entry.buyer = subscription.owner;
         buyer_entry.bump = ctx.bumps.buyer_entry;
     } else {
-        require_eq!(buyer_entry.round_id, round.round_id, LotteryError::RoundIdMismatch);
+        require_eq!(
+            buyer_entry.round_id,
+            round.round_id,
+            LotteryError::RoundIdMismatch
+        );
     }
     let first_index = buyer_entry.ticket_count;
 
@@ -318,7 +391,11 @@ pub fn process_subscription<'info>(
             &[TICKET_SEED, &round_id_bytes, owner_key.as_ref(), &idx_bytes],
             program_id,
         );
-        require_keys_eq!(ticket_account.key(), expected_pda, LotteryError::InvalidConfig);
+        require_keys_eq!(
+            ticket_account.key(),
+            expected_pda,
+            LotteryError::InvalidConfig
+        );
 
         let signer_seeds: &[&[u8]] = &[
             TICKET_SEED,
@@ -375,18 +452,48 @@ pub fn process_subscription<'info>(
         &[subscription.bump],
     ];
     let signers = &[signer_seeds];
-    token::transfer(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.sub_escrow.to_account_info(),
-                to: ctx.accounts.prize_vault.to_account_info(),
-                authority: subscription.to_account_info(),
-            },
-            signers,
-        ),
-        total_paid,
-    )?;
+    if lp_edge_total > 0 {
+        token::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.sub_escrow.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    to: ctx.accounts.lp_principal.to_account_info(),
+                    authority: subscription.to_account_info(),
+                },
+                signers,
+            ),
+            lp_edge_total,
+            ctx.accounts.usdc_mint.decimals,
+        )?;
+        ctx.accounts.lp_vault.total_assets = ctx
+            .accounts
+            .lp_vault
+            .total_assets
+            .checked_add(lp_edge_total)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+    }
+
+    let prize_vault_amount = total_paid
+        .checked_sub(lp_edge_total)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    if prize_vault_amount > 0 {
+        token::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.sub_escrow.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    to: ctx.accounts.prize_vault.to_account_info(),
+                    authority: subscription.to_account_info(),
+                },
+                signers,
+            ),
+            prize_vault_amount,
+            ctx.accounts.usdc_mint.decimals,
+        )?;
+    }
 
     if let Some(referrer_account) = ctx.accounts.referrer_account.as_mut() {
         referrer_account.accrued = referrer_account
@@ -405,7 +512,11 @@ pub fn process_subscription<'info>(
 
     round.prize_pool = round
         .prize_pool
-        .checked_add(pool_contribution)
+        .checked_add(ticket_prize_contribution)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    round.ticket_prize_pool = round
+        .ticket_prize_pool
+        .checked_add(ticket_prize_contribution)
         .ok_or(error!(LotteryError::MathOverflow))?;
     round.lp_edge_accrued = round
         .lp_edge_accrued
@@ -457,6 +568,8 @@ pub struct CancelSubscription<'info> {
         mut,
         seeds = [SUB_ESCROW_SEED, owner.key().as_ref(), usdc_mint.key().as_ref()],
         bump = subscription.escrow_bump,
+        token::mint = usdc_mint,
+        token::authority = subscription,
     )]
     pub sub_escrow: Box<Account<'info, TokenAccount>>,
 
@@ -476,23 +589,21 @@ pub fn cancel_subscription(ctx: Context<CancelSubscription>) -> Result<()> {
 
     if refund > 0 {
         let owner_key = subscription.owner;
-        let signer_seeds: &[&[u8]] = &[
-            SUBSCRIPTION_SEED,
-            owner_key.as_ref(),
-            &[subscription.bump],
-        ];
+        let signer_seeds: &[&[u8]] = &[SUBSCRIPTION_SEED, owner_key.as_ref(), &[subscription.bump]];
         let signers = &[signer_seeds];
-        token::transfer(
+        token::transfer_checked(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
-                Transfer {
+                TransferChecked {
                     from: ctx.accounts.sub_escrow.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
                     to: ctx.accounts.owner_token_account.to_account_info(),
                     authority: subscription.to_account_info(),
                 },
                 signers,
             ),
             refund,
+            ctx.accounts.usdc_mint.decimals,
         )?;
     }
 

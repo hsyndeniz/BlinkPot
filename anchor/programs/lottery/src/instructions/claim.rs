@@ -1,22 +1,25 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
-    BPS_DENOM, CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
+    CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
     PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED, REFERRAL_SEED, ROUND_SEED, TICKET_SEED,
-    TIER_COUNT,
 };
 use crate::errors::LotteryError;
 use crate::events::{TierPoolsTallied, WinnerRegistered, WinningsClaimed};
-use crate::math::{bps_amount, count_matches, tier_for_match};
-use crate::state::config::{Config, UntakenTierDestination};
+use crate::math::{bps_amount, calculate_tally_outcome, count_matches, tier_for_match};
+use crate::state::config::Config;
 use crate::state::lp::LpVault;
 use crate::state::referral::Referral;
 use crate::state::round::{Round, RoundState};
 use crate::state::ticket::Ticket;
 
 fn register_ticket_for_round(round: &mut Round, ticket: &mut Ticket) -> Result<()> {
-    require_eq!(ticket.round_id, round.round_id, LotteryError::RoundIdMismatch);
+    require_eq!(
+        ticket.round_id,
+        round.round_id,
+        LotteryError::RoundIdMismatch
+    );
     require!(!ticket.registered, LotteryError::TicketAlreadyRegistered);
 
     let (matches, has_bonus) = count_matches(
@@ -80,7 +83,10 @@ pub struct RegisterWinner<'info> {
 }
 
 pub fn register_winner(ctx: Context<RegisterWinner>) -> Result<()> {
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
 
     let round = &mut ctx.accounts.round;
     let ticket = &mut ctx.accounts.ticket;
@@ -109,7 +115,10 @@ pub struct RegisterWinnersBatch<'info> {
 pub fn register_winners_batch<'info>(
     ctx: Context<'_, '_, 'info, 'info, RegisterWinnersBatch<'info>>,
 ) -> Result<()> {
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
 
     let round = &mut ctx.accounts.round;
     require!(round.is_settled(), LotteryError::RoundNotSettled);
@@ -188,6 +197,8 @@ pub struct TallyTierPools<'info> {
         mut,
         seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
         bump,
+        token::mint = usdc_mint,
+        token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
 
@@ -199,14 +210,23 @@ pub struct TallyTierPools<'info> {
         mut,
         seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
         bump,
+        token::mint = usdc_mint,
+        token::authority = lp_authority,
     )]
     pub lp_principal: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: PDA authority for lp_principal.
+    #[account(seeds = [LP_AUTHORITY_SEED], bump = config.lp_authority_bump)]
+    pub lp_authority: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
 }
 
 pub fn tally_tier_pools(ctx: Context<TallyTierPools>) -> Result<()> {
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
 
     let round = &mut ctx.accounts.round;
     require!(
@@ -219,86 +239,76 @@ pub fn tally_tier_pools(ctx: Context<TallyTierPools>) -> Result<()> {
         LotteryError::UnregisteredTicketsRemain
     );
 
-    let prize_pool = round.prize_pool;
-    let mut total_to_winners: u64 = 0;
-    let mut untaken_tier_total: u64 = 0;
-    let mut tier_pool_amounts = [0u64; TIER_COUNT];
+    let tally = calculate_tally_outcome(
+        round.prize_pool,
+        round.seed_prize_pool,
+        round.ticket_prize_pool,
+        round.lp_guarantee_reserved,
+        &round.tier_winner_counts,
+        &ctx.accounts.config.tier_payout_bps,
+        ctx.accounts.config.untaken_tier_destination,
+    )?;
 
-    for t in 1..TIER_COUNT {
-        let bps = ctx.accounts.config.tier_payout_bps[t];
-        if bps == 0 {
-            continue;
-        }
-        let pool_for_tier = bps_amount(prize_pool, bps)?;
-        if round.tier_winner_counts[t] > 0 {
-            tier_pool_amounts[t] = pool_for_tier;
-            total_to_winners = total_to_winners
-                .checked_add(pool_for_tier)
-                .ok_or(error!(LotteryError::MathOverflow))?;
-        } else {
-            untaken_tier_total = untaken_tier_total
-                .checked_add(pool_for_tier)
-                .ok_or(error!(LotteryError::MathOverflow))?;
-        }
+    if tally.lp_loss_reserved > 0 {
+        ctx.accounts.lp_vault.total_assets = ctx
+            .accounts
+            .lp_vault
+            .total_assets
+            .checked_sub(tally.lp_loss_reserved)
+            .ok_or(error!(LotteryError::MathOverflow))?;
     }
 
-    let allocated = total_to_winners
-        .checked_add(untaken_tier_total)
+    let to_lp_now = tally
+        .unused_guarantee
+        .checked_add(tally.rolled_to_lp)
         .ok_or(error!(LotteryError::MathOverflow))?;
-    let house_edge = prize_pool.saturating_sub(allocated);
-
-    let to_lp_now = match ctx.accounts.config.untaken_tier_destination {
-        UntakenTierDestination::LpPool => untaken_tier_total
-            .checked_add(house_edge)
-            .ok_or(error!(LotteryError::MathOverflow))?,
-        UntakenTierDestination::NextRound => house_edge,
-    };
-    let to_next_round = match ctx.accounts.config.untaken_tier_destination {
-        UntakenTierDestination::NextRound => untaken_tier_total,
-        UntakenTierDestination::LpPool => 0,
-    };
 
     if to_lp_now > 0 {
-        let mint_key = ctx.accounts.usdc_mint.key();
         let signer_seeds: &[&[u8]] = &[
             PRIZE_VAULT_AUTHORITY_SEED,
             &[ctx.accounts.config.prize_vault_authority_bump],
         ];
         let signers = &[signer_seeds];
-        token::transfer(
+        token::transfer_checked(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
-                Transfer {
+                TransferChecked {
                     from: ctx.accounts.prize_vault.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
                     to: ctx.accounts.lp_principal.to_account_info(),
                     authority: ctx.accounts.prize_vault_authority.to_account_info(),
                 },
                 signers,
             ),
             to_lp_now,
+            ctx.accounts.usdc_mint.decimals,
         )?;
-        ctx.accounts.lp_vault.total_assets = ctx
-            .accounts
-            .lp_vault
-            .total_assets
-            .checked_add(to_lp_now)
-            .ok_or(error!(LotteryError::MathOverflow))?;
-        let _ = mint_key;
+        if tally.rolled_to_lp > 0 {
+            ctx.accounts.lp_vault.total_assets = ctx
+                .accounts
+                .lp_vault
+                .total_assets
+                .checked_add(tally.rolled_to_lp)
+                .ok_or(error!(LotteryError::MathOverflow))?;
+        }
     }
 
-    round.tier_pool_amounts = tier_pool_amounts;
+    round.tier_pool_amounts = tally.tier_pool_amounts;
     round.tally_done = true;
-    round.rolled_to_lp = to_lp_now;
-    round.rolled_to_next_round = to_next_round;
+    round.rolled_to_lp = tally.rolled_to_lp;
+    round.rolled_to_next_round = tally.rolled_to_next_round;
+    round.lp_loss_reserved = tally.lp_loss_reserved;
+    round.player_funded_prizes = tally.player_funded_prizes;
     round.state = RoundState::Claimable;
 
     emit!(TierPoolsTallied {
         round_id: round.round_id,
         tier_winner_counts: round.tier_winner_counts,
-        tier_pool_amounts,
-        rolled_to_lp: to_lp_now,
+        tier_pool_amounts: tally.tier_pool_amounts,
+        rolled_to_lp: tally.rolled_to_lp,
+        rolled_to_next_round: tally.rolled_to_next_round,
+        lp_loss_reserved: tally.lp_loss_reserved,
     });
-    let _ = BPS_DENOM;
     Ok(())
 }
 
@@ -337,6 +347,8 @@ pub struct ClaimWinnings<'info> {
         mut,
         seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
         bump,
+        token::mint = usdc_mint,
+        token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
 
@@ -362,7 +374,10 @@ pub struct ClaimWinnings<'info> {
 }
 
 pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
 
     let round = &mut ctx.accounts.round;
     let ticket = &mut ctx.accounts.ticket;
@@ -371,7 +386,11 @@ pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
         matches!(round.state, RoundState::Claimable | RoundState::Archived),
         LotteryError::RoundNotClaimable
     );
-    require_eq!(ticket.round_id, round.round_id, LotteryError::RoundIdMismatch);
+    require_eq!(
+        ticket.round_id,
+        round.round_id,
+        LotteryError::RoundIdMismatch
+    );
     require!(ticket.registered, LotteryError::TierNotTallied);
     require!(!ticket.claimed, LotteryError::TicketAlreadyClaimed);
     require!(ticket.tier > 0, LotteryError::NotAWinningTier);
@@ -385,9 +404,23 @@ pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
     let gross = pool / count;
     require!(gross > 0, LotteryError::TierNotTallied);
 
-    let referral_amount = if ticket.has_referrer && ctx.accounts.referrer_account.is_some() {
+    let referral_amount = if ticket.has_referrer {
+        let referrer_account = ctx
+            .accounts
+            .referrer_account
+            .as_ref()
+            .ok_or(error!(LotteryError::ReferralRequired))?;
+        require_keys_eq!(
+            referrer_account.owner,
+            ticket.referrer,
+            LotteryError::InvalidConfig
+        );
         bps_amount(gross, ctx.accounts.config.referral_win_share_bps)?
     } else {
+        require!(
+            ctx.accounts.referrer_account.is_none(),
+            LotteryError::InvalidConfig
+        );
         0
     };
     let net_to_winner = gross
@@ -400,17 +433,19 @@ pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
     ];
     let signers = &[signer_seeds];
 
-    token::transfer(
+    token::transfer_checked(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
-            Transfer {
+            TransferChecked {
                 from: ctx.accounts.prize_vault.to_account_info(),
+                mint: ctx.accounts.usdc_mint.to_account_info(),
                 to: ctx.accounts.winner_token_account.to_account_info(),
                 authority: ctx.accounts.prize_vault_authority.to_account_info(),
             },
             signers,
         ),
         net_to_winner,
+        ctx.accounts.usdc_mint.decimals,
     )?;
 
     if let Some(referrer_account) = ctx.accounts.referrer_account.as_mut() {

@@ -27,7 +27,6 @@ pub struct Ticket {
 }
 
 impl Ticket {
-    pub const LEN: usize = 8 + 8 + 32 + 32 + 32 + 1 + 8 + 8
-        + NORMAL_BALL_COUNT + 1
-        + 1 + 1 + 1 + 1 + 16;
+    pub const LEN: usize =
+        8 + 8 + 32 + 32 + 32 + 1 + 8 + 8 + NORMAL_BALL_COUNT + 1 + 1 + 1 + 1 + 1 + 16;
 }

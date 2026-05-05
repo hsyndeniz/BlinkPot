@@ -37,5 +37,10 @@ pub const MAX_DAYS_PER_SUBSCRIPTION: u16 = 365;
 pub const MAX_DAILY_TICKETS_PER_SUB: u8 = 20;
 
 pub fn switchboard_program_id() -> Pubkey {
+    #[cfg(feature = "devnet")]
+    {
+        return switchboard_on_demand::ON_DEMAND_DEVNET_PID;
+    }
+    #[cfg(not(feature = "devnet"))]
     switchboard_on_demand::ON_DEMAND_MAINNET_PID
 }

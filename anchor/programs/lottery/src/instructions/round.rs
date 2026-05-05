@@ -1,12 +1,16 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
-    CONFIG_SEED, MAX_BONUSBALL_MAX, MAX_ROUND_DURATION_SECS, MIN_BONUSBALL_MAX,
-    MIN_ROUND_DURATION_SECS, NORMAL_BALL_COUNT, ROUND_COUNTER_SEED, ROUND_SEED,
+    CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED, MAX_BONUSBALL_MAX,
+    MAX_ROUND_DURATION_SECS, MIN_BONUSBALL_MAX, MIN_ROUND_DURATION_SECS, NORMAL_BALL_COUNT,
+    PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED, ROUND_COUNTER_SEED, ROUND_SEED,
 };
 use crate::errors::LotteryError;
 use crate::events::{RoundArchived, RoundOpened};
+use crate::math::assets_for_shares;
 use crate::state::config::{Config, RoundCounter};
+use crate::state::lp::LpVault;
 use crate::state::round::{Round, RoundState};
 
 #[derive(Accounts)]
@@ -16,10 +20,10 @@ pub struct StartRound<'info> {
     pub starter: Signer<'info>,
 
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 
     #[account(mut, seeds = [ROUND_COUNTER_SEED], bump = round_counter.bump)]
-    pub round_counter: Account<'info, RoundCounter>,
+    pub round_counter: Box<Account<'info, RoundCounter>>,
 
     /// CHECK: previous round; only validated when round_counter.current_round_id > 0.
     pub previous_round: UncheckedAccount<'info>,
@@ -31,8 +35,45 @@ pub struct StartRound<'info> {
         bump,
         space = 8 + Round::LEN,
     )]
-    pub round: Account<'info, Round>,
+    pub round: Box<Account<'info, Round>>,
 
+    #[account(
+        mut,
+        seeds = [LP_VAULT_SEED],
+        bump = lp_vault.bump,
+    )]
+    pub lp_vault: Box<Account<'info, LpVault>>,
+
+    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
+    pub usdc_mint: Box<Account<'info, Mint>>,
+
+    /// CHECK: PDA authority for prize_vault.
+    #[account(seeds = [PRIZE_VAULT_AUTHORITY_SEED], bump = config.prize_vault_authority_bump)]
+    pub prize_vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = prize_vault_authority,
+    )]
+    pub prize_vault: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: PDA authority for lp_principal, signs guarantee reserve transfers.
+    #[account(seeds = [LP_AUTHORITY_SEED], bump = config.lp_authority_bump)]
+    pub lp_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = lp_authority,
+    )]
+    pub lp_principal: Box<Account<'info, TokenAccount>>,
+
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
@@ -43,16 +84,16 @@ pub fn start_round(
     bonusball_max: u8,
 ) -> Result<()> {
     require!(!ctx.accounts.config.paused, LotteryError::Paused);
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
 
     let counter = &mut ctx.accounts.round_counter;
     let next_round_id = counter.current_round_id + 1;
 
-    // Rollover from the previous round that will seed this round's prize pool.
-    // The USDC already lives in prize_vault_ata (tally_tier_pools left it there);
-    // we only need to update the accounting field.
-    // If tally hasn't run yet (Settled / Registering states), rolled_to_next_round
-    // is 0, so the new round simply starts with an empty pool — correct behavior.
+    // Rollover from the previous tallied round stays in the prize vault and seeds
+    // this round's player-funded prize accounting.
     let seed_prize_pool: u64;
 
     if counter.current_round_id > 0 {
@@ -70,19 +111,52 @@ pub fn start_round(
         let prev = Round::try_deserialize(&mut data.as_ref())
             .map_err(|_| error!(LotteryError::PreviousRoundUnsettled))?;
         require!(
-            matches!(
-                prev.state,
-                RoundState::Settled
-                    | RoundState::Registering
-                    | RoundState::Claimable
-                    | RoundState::Archived
-                    | RoundState::Emergency
-            ),
+            matches!(prev.state, RoundState::Claimable | RoundState::Archived) && prev.tally_done,
             LotteryError::PreviousRoundUnsettled
         );
         seed_prize_pool = prev.rolled_to_next_round;
     } else {
         seed_prize_pool = 0;
+    }
+
+    let guaranteed_prize_pool = ctx.accounts.config.guaranteed_prize_pool;
+    if guaranteed_prize_pool > 0 {
+        let pending_assets = assets_for_shares(
+            ctx.accounts.lp_vault.pending_withdraw_shares,
+            ctx.accounts.lp_vault.total_shares,
+            ctx.accounts.lp_vault.total_assets,
+        )?;
+        let available_assets = ctx
+            .accounts
+            .lp_vault
+            .total_assets
+            .checked_sub(pending_assets)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+        require!(
+            guaranteed_prize_pool <= available_assets,
+            LotteryError::LpGuaranteeUnavailable
+        );
+        require!(
+            ctx.accounts.lp_principal.amount >= guaranteed_prize_pool,
+            LotteryError::LpPrincipalUnderfunded
+        );
+
+        let signer_seeds: &[&[u8]] = &[LP_AUTHORITY_SEED, &[ctx.accounts.config.lp_authority_bump]];
+        let signers = &[signer_seeds];
+        token::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.lp_principal.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    to: ctx.accounts.prize_vault.to_account_info(),
+                    authority: ctx.accounts.lp_authority.to_account_info(),
+                },
+                signers,
+            ),
+            guaranteed_prize_pool,
+            ctx.accounts.usdc_mint.decimals,
+        )?;
     }
 
     let price = if ticket_price == 0 {
@@ -132,9 +206,9 @@ pub fn start_round(
     round.ticket_count = 0;
     round.registered_count = 0;
     round.claimed_count = 0;
-    // Seed the prize pool with any rollover from the previous round.
-    // The corresponding USDC is already in prize_vault_ata.
-    round.prize_pool = seed_prize_pool;
+    round.prize_pool = seed_prize_pool
+        .checked_add(guaranteed_prize_pool)
+        .ok_or(error!(LotteryError::MathOverflow))?;
     round.lp_edge_accrued = 0;
     round.referral_fees_accrued = 0;
     round.tier_winner_counts = [0u32; 12];
@@ -145,6 +219,10 @@ pub fn start_round(
     round.rolled_to_lp = 0;
     round.rolled_to_next_round = 0;
     round.seed_prize_pool = seed_prize_pool;
+    round.ticket_prize_pool = 0;
+    round.lp_guarantee_reserved = guaranteed_prize_pool;
+    round.lp_loss_reserved = 0;
+    round.player_funded_prizes = 0;
 
     counter.current_round_id = next_round_id;
 
@@ -154,6 +232,7 @@ pub fn start_round(
         draw_time: round.draw_time,
         bonusball_max: bonus_max,
         seed_prize_pool,
+        guaranteed_prize_pool,
     });
     Ok(())
 }
@@ -179,11 +258,10 @@ pub struct ArchiveRound<'info> {
 
 pub fn archive_round(ctx: Context<ArchiveRound>) -> Result<()> {
     let round = &mut ctx.accounts.round;
-    require!(
-        matches!(round.state, RoundState::Claimable | RoundState::Emergency),
-        LotteryError::RoundNotArchivable
-    );
+    require!(round.is_claimable(), LotteryError::RoundNotArchivable);
     round.state = RoundState::Archived;
-    emit!(RoundArchived { round_id: round.round_id });
+    emit!(RoundArchived {
+        round_id: round.round_id
+    });
     Ok(())
 }

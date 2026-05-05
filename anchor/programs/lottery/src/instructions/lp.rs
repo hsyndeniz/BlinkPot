@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
     CONFIG_SEED, LP_AUTHORITY_SEED, LP_POSITION_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
@@ -50,8 +50,14 @@ pub struct LpDeposit<'info> {
         mut,
         seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
         bump,
+        token::mint = usdc_mint,
+        token::authority = lp_authority,
     )]
     pub lp_principal: Account<'info, TokenAccount>,
+
+    /// CHECK: PDA authority for lp_principal.
+    #[account(seeds = [LP_AUTHORITY_SEED], bump = config.lp_authority_bump)]
+    pub lp_authority: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -60,7 +66,10 @@ pub struct LpDeposit<'info> {
 
 pub fn lp_deposit(ctx: Context<LpDeposit>, amount: u64) -> Result<()> {
     require!(!ctx.accounts.config.paused, LotteryError::Paused);
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
     require!(amount > 0, LotteryError::InvalidConfig);
 
     let cap = ctx.accounts.config.lp_pool_cap;
@@ -81,16 +90,18 @@ pub fn lp_deposit(ctx: Context<LpDeposit>, amount: u64) -> Result<()> {
     )?;
     require!(shares > 0, LotteryError::MathOverflow);
 
-    token::transfer(
+    token::transfer_checked(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
-            Transfer {
+            TransferChecked {
                 from: ctx.accounts.owner_token_account.to_account_info(),
+                mint: ctx.accounts.usdc_mint.to_account_info(),
                 to: ctx.accounts.lp_principal.to_account_info(),
                 authority: ctx.accounts.owner.to_account_info(),
             },
         ),
         amount,
+        ctx.accounts.usdc_mint.decimals,
     )?;
 
     let position = &mut ctx.accounts.position;
@@ -98,7 +109,11 @@ pub fn lp_deposit(ctx: Context<LpDeposit>, amount: u64) -> Result<()> {
         position.owner = ctx.accounts.owner.key();
         position.bump = ctx.bumps.position;
     } else {
-        require_keys_eq!(position.owner, ctx.accounts.owner.key(), LotteryError::Unauthorized);
+        require_keys_eq!(
+            position.owner,
+            ctx.accounts.owner.key(),
+            LotteryError::Unauthorized
+        );
     }
     position.shares = position
         .shares
@@ -152,12 +167,21 @@ pub struct LpInitiateWithdraw<'info> {
 }
 
 pub fn lp_initiate_withdraw(ctx: Context<LpInitiateWithdraw>, shares: u64) -> Result<()> {
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
     let position = &mut ctx.accounts.position;
-    require!(!position.has_pending_withdrawal(), LotteryError::LpWithdrawalPending);
+    require!(
+        !position.has_pending_withdrawal(),
+        LotteryError::LpWithdrawalPending
+    );
     let shares_u128 = shares as u128;
     require!(shares_u128 > 0, LotteryError::InvalidConfig);
-    require!(position.shares >= shares_u128, LotteryError::LpInsufficientShares);
+    require!(
+        position.shares >= shares_u128,
+        LotteryError::LpInsufficientShares
+    );
 
     position.shares = position.shares - shares_u128;
     position.pending_withdraw_shares = shares_u128;
@@ -221,6 +245,8 @@ pub struct LpFinalizeWithdraw<'info> {
         mut,
         seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
         bump,
+        token::mint = usdc_mint,
+        token::authority = lp_authority,
     )]
     pub lp_principal: Account<'info, TokenAccount>,
 
@@ -239,9 +265,15 @@ pub struct LpFinalizeWithdraw<'info> {
 }
 
 pub fn lp_finalize_withdraw(ctx: Context<LpFinalizeWithdraw>) -> Result<()> {
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
     let position = &mut ctx.accounts.position;
-    require!(position.has_pending_withdrawal(), LotteryError::LpNoPendingWithdrawal);
+    require!(
+        position.has_pending_withdrawal(),
+        LotteryError::LpNoPendingWithdrawal
+    );
     let counter = &ctx.accounts.round_counter;
     require!(
         counter.current_round_id > position.pending_withdraw_round,
@@ -265,17 +297,19 @@ pub fn lp_finalize_withdraw(ctx: Context<LpFinalizeWithdraw>) -> Result<()> {
 
     let signer_seeds: &[&[u8]] = &[LP_AUTHORITY_SEED, &[ctx.accounts.config.lp_authority_bump]];
     let signers = &[signer_seeds];
-    token::transfer(
+    token::transfer_checked(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
-            Transfer {
+            TransferChecked {
                 from: ctx.accounts.lp_principal.to_account_info(),
+                mint: ctx.accounts.usdc_mint.to_account_info(),
                 to: ctx.accounts.owner_token_account.to_account_info(),
                 authority: ctx.accounts.lp_authority.to_account_info(),
             },
             signers,
         ),
         assets,
+        ctx.accounts.usdc_mint.decimals,
     )?;
 
     lp_vault.total_shares = lp_vault

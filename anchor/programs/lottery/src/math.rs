@@ -4,6 +4,7 @@ use crate::constants::{
     BPS_DENOM, INITIAL_SHARES_PER_USDC, NORMAL_BALL_COUNT, NORMAL_BALL_MIN, SHARE_SCALE, TIER_COUNT,
 };
 use crate::errors::LotteryError;
+use crate::state::config::UntakenTierDestination;
 
 pub fn validate_pick(
     normals: &[u8; NORMAL_BALL_COUNT],
@@ -11,7 +12,10 @@ pub fn validate_pick(
     normal_ball_max: u8,
     bonusball_max: u8,
 ) -> Result<()> {
-    require!(bonusball >= 1 && bonusball <= bonusball_max, LotteryError::BonusballOutOfRange);
+    require!(
+        bonusball >= 1 && bonusball <= bonusball_max,
+        LotteryError::BonusballOutOfRange
+    );
     let mut prev: u8 = 0;
     for &n in normals.iter() {
         require!(
@@ -72,7 +76,10 @@ pub fn derive_winning_numbers(
     normal_ball_max: u8,
     bonusball_max: u8,
 ) -> Result<([u8; NORMAL_BALL_COUNT], u8)> {
-    require!(normal_ball_max as usize >= NORMAL_BALL_COUNT, LotteryError::InvalidConfig);
+    require!(
+        normal_ball_max as usize >= NORMAL_BALL_COUNT,
+        LotteryError::InvalidConfig
+    );
     require!(bonusball_max >= 1, LotteryError::InvalidConfig);
 
     // Rejection-sampling threshold for unbiased modulo.
@@ -150,11 +157,7 @@ pub fn shares_for_deposit(
     Ok(numerator / total_assets as u128)
 }
 
-pub fn assets_for_shares(
-    shares: u128,
-    total_shares: u128,
-    total_assets: u64,
-) -> Result<u64> {
+pub fn assets_for_shares(shares: u128, total_shares: u128, total_assets: u64) -> Result<u64> {
     if total_shares == 0 {
         return Ok(0);
     }
@@ -185,11 +188,88 @@ pub fn bps_amount(amount: u64, bps: u16) -> Result<u64> {
 pub fn validate_tier_payout_bps(tier_payout_bps: &[u16; TIER_COUNT]) -> Result<()> {
     let mut sum: u32 = 0;
     for v in tier_payout_bps.iter() {
-        sum = sum.checked_add(*v as u32).ok_or(error!(LotteryError::MathOverflow))?;
+        sum = sum
+            .checked_add(*v as u32)
+            .ok_or(error!(LotteryError::MathOverflow))?;
     }
     require!(sum <= BPS_DENOM as u32, LotteryError::InvalidTierPayoutBps);
     require!(tier_payout_bps[0] == 0, LotteryError::InvalidTierPayoutBps);
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TallyOutcome {
+    pub tier_pool_amounts: [u64; TIER_COUNT],
+    pub winner_liability: u64,
+    pub player_funded_prizes: u64,
+    pub lp_loss_reserved: u64,
+    pub unused_guarantee: u64,
+    pub rolled_to_lp: u64,
+    pub rolled_to_next_round: u64,
+}
+
+pub fn calculate_tally_outcome(
+    prize_pool: u64,
+    seed_prize_pool: u64,
+    ticket_prize_pool: u64,
+    lp_guarantee_reserved: u64,
+    tier_winner_counts: &[u32; TIER_COUNT],
+    tier_payout_bps: &[u16; TIER_COUNT],
+    untaken_tier_destination: UntakenTierDestination,
+) -> Result<TallyOutcome> {
+    let mut winner_liability: u64 = 0;
+    let mut tier_pool_amounts = [0u64; TIER_COUNT];
+
+    for t in 1..TIER_COUNT {
+        let bps = tier_payout_bps[t];
+        if bps == 0 || tier_winner_counts[t] == 0 {
+            continue;
+        }
+        let count = tier_winner_counts[t] as u64;
+        let pool_for_tier = bps_amount(prize_pool, bps)?;
+        let payable_per_winner = pool_for_tier / count;
+        let payable_pool = payable_per_winner
+            .checked_mul(count)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+        tier_pool_amounts[t] = payable_pool;
+        winner_liability = winner_liability
+            .checked_add(payable_pool)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+    }
+
+    let player_assets = seed_prize_pool
+        .checked_add(ticket_prize_pool)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    let player_funded_prizes = winner_liability.min(player_assets);
+    let lp_loss_reserved = winner_liability
+        .checked_sub(player_funded_prizes)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    require!(
+        lp_loss_reserved <= lp_guarantee_reserved,
+        LotteryError::LpPrincipalUnderfunded
+    );
+
+    let unused_player_assets = player_assets
+        .checked_sub(player_funded_prizes)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    let unused_guarantee = lp_guarantee_reserved
+        .checked_sub(lp_loss_reserved)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+
+    let (rolled_to_lp, rolled_to_next_round) = match untaken_tier_destination {
+        UntakenTierDestination::LpPool => (unused_player_assets, 0),
+        UntakenTierDestination::NextRound => (0, unused_player_assets),
+    };
+
+    Ok(TallyOutcome {
+        tier_pool_amounts,
+        winner_liability,
+        player_funded_prizes,
+        lp_loss_reserved,
+        unused_guarantee,
+        rolled_to_lp,
+        rolled_to_next_round,
+    })
 }
 
 #[cfg(test)]
@@ -237,10 +317,9 @@ mod tests {
     #[test]
     fn derive_winning_numbers_unique() {
         let bytes: [u8; 32] = [
-            0x01, 0x05, 0x0a, 0x0f, 0x14, 0x19, 0x1e, 0x05,
-            0x0a, 0x0f, 0x42, 0x99, 0x77, 0x33, 0x55, 0xaa,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-            0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x07,
+            0x01, 0x05, 0x0a, 0x0f, 0x14, 0x19, 0x1e, 0x05, 0x0a, 0x0f, 0x42, 0x99, 0x77, 0x33,
+            0x55, 0xaa, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc,
+            0xdd, 0xee, 0xff, 0x07,
         ];
         let (normals, bonus) = derive_winning_numbers(&bytes, 30, 15).unwrap();
         let mut seen = [false; 64];
@@ -284,5 +363,75 @@ mod tests {
         bps[1] = 5_000;
         bps[11] = 6_000;
         assert!(validate_tier_payout_bps(&bps).is_err());
+    }
+
+    #[test]
+    fn tally_uses_player_assets_before_lp_guarantee() {
+        let mut counts = [0u32; TIER_COUNT];
+        counts[11] = 1;
+        let mut bps = [0u16; TIER_COUNT];
+        bps[11] = 7_000;
+
+        let out = calculate_tally_outcome(
+            2_000_000,
+            100_000,
+            400_000,
+            1_500_000,
+            &counts,
+            &bps,
+            UntakenTierDestination::NextRound,
+        )
+        .unwrap();
+
+        assert_eq!(out.tier_pool_amounts[11], 1_400_000);
+        assert_eq!(out.player_funded_prizes, 500_000);
+        assert_eq!(out.lp_loss_reserved, 900_000);
+        assert_eq!(out.unused_guarantee, 600_000);
+        assert_eq!(out.rolled_to_next_round, 0);
+    }
+
+    #[test]
+    fn tally_rolls_only_unused_player_assets() {
+        let counts = [0u32; TIER_COUNT];
+        let mut bps = [0u16; TIER_COUNT];
+        bps[11] = 7_000;
+
+        let out = calculate_tally_outcome(
+            2_000_000,
+            100_000,
+            400_000,
+            1_500_000,
+            &counts,
+            &bps,
+            UntakenTierDestination::NextRound,
+        )
+        .unwrap();
+
+        assert_eq!(out.winner_liability, 0);
+        assert_eq!(out.lp_loss_reserved, 0);
+        assert_eq!(out.unused_guarantee, 1_500_000);
+        assert_eq!(out.rolled_to_next_round, 500_000);
+    }
+
+    #[test]
+    fn tally_sends_unused_player_assets_to_lp_when_configured() {
+        let counts = [0u32; TIER_COUNT];
+        let mut bps = [0u16; TIER_COUNT];
+        bps[11] = 7_000;
+
+        let out = calculate_tally_outcome(
+            2_000_000,
+            100_000,
+            400_000,
+            1_500_000,
+            &counts,
+            &bps,
+            UntakenTierDestination::LpPool,
+        )
+        .unwrap();
+
+        assert_eq!(out.rolled_to_lp, 500_000);
+        assert_eq!(out.rolled_to_next_round, 0);
+        assert_eq!(out.unused_guarantee, 1_500_000);
     }
 }

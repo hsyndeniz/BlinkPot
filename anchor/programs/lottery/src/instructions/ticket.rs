@@ -1,16 +1,18 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
-    BUYER_ENTRY_SEED, CONFIG_SEED, MAX_TICKETS_PER_BATCH, NORMAL_BALL_COUNT,
-    PRIZE_VAULT_TOKEN_SEED, REFERRAL_SEED, ROUND_SEED, TICKET_SEED,
+    BUYER_ENTRY_SEED, CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
+    MAX_TICKETS_PER_BATCH, NORMAL_BALL_COUNT, PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED,
+    REFERRAL_SEED, ROUND_SEED, TICKET_SEED,
 };
 use crate::errors::LotteryError;
 use crate::events::TicketsPurchased;
 use crate::math::{bps_amount, validate_pick};
 use crate::state::buyer_entry::BuyerEntry;
 use crate::state::config::Config;
+use crate::state::lp::LpVault;
 use crate::state::referral::Referral;
 use crate::state::round::Round;
 use crate::state::ticket::{Ticket, TicketPick};
@@ -45,8 +47,34 @@ pub struct BuyTickets<'info> {
         mut,
         seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
         bump,
+        token::mint = usdc_mint,
+        token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: PDA authority for prize_vault.
+    #[account(seeds = [PRIZE_VAULT_AUTHORITY_SEED], bump = config.prize_vault_authority_bump)]
+    pub prize_vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [LP_VAULT_SEED],
+        bump = lp_vault.bump,
+    )]
+    pub lp_vault: Box<Account<'info, LpVault>>,
+
+    /// CHECK: PDA authority for lp_principal.
+    #[account(seeds = [LP_AUTHORITY_SEED], bump = config.lp_authority_bump)]
+    pub lp_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = lp_authority,
+    )]
+    pub lp_principal: Box<Account<'info, TokenAccount>>,
 
     #[account(
         init_if_needed,
@@ -71,7 +99,10 @@ pub fn buy_tickets<'info>(
     referrer: Option<Pubkey>,
 ) -> Result<()> {
     require!(!ctx.accounts.config.paused, LotteryError::Paused);
-    require!(!ctx.accounts.config.emergency_mode, LotteryError::EmergencyMode);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
 
     let count = picks.len();
     require!(
@@ -79,12 +110,12 @@ pub fn buy_tickets<'info>(
         LotteryError::InvalidBatchSize
     );
 
-    require!(
-        ctx.accounts.round.is_open(),
-        LotteryError::RoundNotOpen
-    );
+    require!(ctx.accounts.round.is_open(), LotteryError::RoundNotOpen);
     let now = Clock::get()?.unix_timestamp;
-    require!(now < ctx.accounts.round.draw_time, LotteryError::DrawTimeNotReached);
+    require!(
+        now < ctx.accounts.round.draw_time,
+        LotteryError::DrawTimeNotReached
+    );
 
     let normal_max = ctx.accounts.round.normal_ball_max;
     let bonus_max = ctx.accounts.round.bonusball_max;
@@ -104,7 +135,10 @@ pub fn buy_tickets<'info>(
         require_keys_eq!(ra.key(), expected_pda, LotteryError::InvalidConfig);
         require_keys_eq!(ra.owner, r, LotteryError::InvalidConfig);
     } else {
-        require!(ctx.accounts.referrer_account.is_none(), LotteryError::InvalidConfig);
+        require!(
+            ctx.accounts.referrer_account.is_none(),
+            LotteryError::InvalidConfig
+        );
     }
 
     let ticket_price = ctx.accounts.round.ticket_price;
@@ -126,8 +160,9 @@ pub fn buy_tickets<'info>(
         .checked_mul(count as u64)
         .ok_or(error!(LotteryError::MathOverflow))?;
 
-    let pool_contribution = total_paid
+    let ticket_prize_contribution = total_paid
         .checked_sub(referral_fee_total)
+        .and_then(|n| n.checked_sub(lp_edge_total))
         .ok_or(error!(LotteryError::MathOverflow))?;
 
     let buyer_entry = &mut ctx.accounts.buyer_entry;
@@ -136,7 +171,11 @@ pub fn buy_tickets<'info>(
         buyer_entry.buyer = ctx.accounts.buyer.key();
         buyer_entry.bump = ctx.bumps.buyer_entry;
     } else {
-        require_eq!(buyer_entry.round_id, ctx.accounts.round.round_id, LotteryError::RoundIdMismatch);
+        require_eq!(
+            buyer_entry.round_id,
+            ctx.accounts.round.round_id,
+            LotteryError::RoundIdMismatch
+        );
     }
 
     let first_index = buyer_entry.ticket_count;
@@ -164,7 +203,11 @@ pub fn buy_tickets<'info>(
             &[TICKET_SEED, &round_id_bytes, buyer_key.as_ref(), &idx_bytes],
             program_id,
         );
-        require_keys_eq!(ticket_account.key(), expected_pda, LotteryError::InvalidConfig);
+        require_keys_eq!(
+            ticket_account.key(),
+            expected_pda,
+            LotteryError::InvalidConfig
+        );
 
         let signer_seeds: &[&[u8]] = &[
             TICKET_SEED,
@@ -215,17 +258,46 @@ pub fn buy_tickets<'info>(
         .checked_add(count as u64)
         .ok_or(error!(LotteryError::MathOverflow))?;
 
-    token::transfer(
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.buyer_token_account.to_account_info(),
-                to: ctx.accounts.prize_vault.to_account_info(),
-                authority: ctx.accounts.buyer.to_account_info(),
-            },
-        ),
-        total_paid,
-    )?;
+    if lp_edge_total > 0 {
+        token::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.buyer_token_account.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    to: ctx.accounts.lp_principal.to_account_info(),
+                    authority: ctx.accounts.buyer.to_account_info(),
+                },
+            ),
+            lp_edge_total,
+            ctx.accounts.usdc_mint.decimals,
+        )?;
+        ctx.accounts.lp_vault.total_assets = ctx
+            .accounts
+            .lp_vault
+            .total_assets
+            .checked_add(lp_edge_total)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+    }
+
+    let prize_vault_amount = total_paid
+        .checked_sub(lp_edge_total)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    if prize_vault_amount > 0 {
+        token::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.buyer_token_account.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    to: ctx.accounts.prize_vault.to_account_info(),
+                    authority: ctx.accounts.buyer.to_account_info(),
+                },
+            ),
+            prize_vault_amount,
+            ctx.accounts.usdc_mint.decimals,
+        )?;
+    }
 
     if let Some(r_account) = ctx.accounts.referrer_account.as_mut() {
         r_account.accrued = r_account
@@ -247,7 +319,11 @@ pub fn buy_tickets<'info>(
     let round = &mut ctx.accounts.round;
     round.prize_pool = round
         .prize_pool
-        .checked_add(pool_contribution)
+        .checked_add(ticket_prize_contribution)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    round.ticket_prize_pool = round
+        .ticket_prize_pool
+        .checked_add(ticket_prize_contribution)
         .ok_or(error!(LotteryError::MathOverflow))?;
     round.lp_edge_accrued = round
         .lp_edge_accrued

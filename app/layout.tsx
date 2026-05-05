@@ -1,6 +1,7 @@
+// @ts-expect-error - global CSS import
+import "./globals.css";
 import type { Metadata } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
-import "./globals.css";
 import { Providers } from "./components/providers";
 
 const inter = Inter({

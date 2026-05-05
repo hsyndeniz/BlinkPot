@@ -71,6 +71,8 @@ pub enum LotteryError {
     RandomnessExpired,
     #[msg("Failed to derive winning numbers from randomness")]
     RandomnessDerivationFailed,
+    #[msg("Active randomness commitment has not timed out")]
+    RandomnessCommitStillActive,
 
     #[msg("LP cap would be exceeded")]
     LpCapExceeded,
@@ -86,11 +88,15 @@ pub enum LotteryError {
     PrizeVaultUnderfunded,
     #[msg("Insufficient LP principal for payout shortfall")]
     LpPrincipalUnderfunded,
+    #[msg("Insufficient available LP liquidity for round guarantee")]
+    LpGuaranteeUnavailable,
 
     #[msg("No referral fees to claim")]
     NoReferralFees,
     #[msg("Referrer cannot be the buyer")]
     SelfReferral,
+    #[msg("Referral account is required")]
+    ReferralRequired,
 
     #[msg("Subscription is inactive or expired")]
     SubscriptionInactive,
@@ -105,4 +111,6 @@ pub enum LotteryError {
     MathOverflow,
     #[msg("Token mint mismatch")]
     InvalidTokenMint,
+    #[msg("Round is not in Emergency state")]
+    RoundNotEmergency,
 }

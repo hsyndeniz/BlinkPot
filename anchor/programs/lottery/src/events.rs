@@ -22,12 +22,19 @@ pub struct EmergencyModeToggled {
 }
 
 #[event]
+pub struct RoundEmergencyEntered {
+    pub round_id: u64,
+    pub emergency_at: i64,
+}
+
+#[event]
 pub struct RoundOpened {
     pub round_id: u64,
     pub ticket_price: u64,
     pub draw_time: i64,
     pub bonusball_max: u8,
     pub seed_prize_pool: u64,
+    pub guaranteed_prize_pool: u64,
 }
 
 #[event]
@@ -69,6 +76,8 @@ pub struct TierPoolsTallied {
     pub tier_winner_counts: [u32; 12],
     pub tier_pool_amounts: [u64; 12],
     pub rolled_to_lp: u64,
+    pub rolled_to_next_round: u64,
+    pub lp_loss_reserved: u64,
 }
 
 #[event]
@@ -106,6 +115,11 @@ pub struct LpWithdrawalFinalized {
 pub struct ReferralFeesClaimed {
     pub referrer: Pubkey,
     pub amount: u64,
+}
+
+#[event]
+pub struct ReferralInitialized {
+    pub referrer: Pubkey,
 }
 
 #[event]

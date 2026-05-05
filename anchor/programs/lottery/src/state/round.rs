@@ -55,6 +55,11 @@ pub struct Round {
     /// Prize pool seeded from the previous round's rollover (set at start_round time).
     /// Stored so the frontend can always display it separately from ticket revenue.
     pub seed_prize_pool: u64,
+
+    pub ticket_prize_pool: u64,
+    pub lp_guarantee_reserved: u64,
+    pub lp_loss_reserved: u64,
+    pub player_funded_prizes: u64,
 }
 
 impl Round {
@@ -74,7 +79,8 @@ impl Round {
         + 8 * TIER_COUNT
         + 1 + 8 + 8
         + 8        // seed_prize_pool
-        + 56;      // reserved padding (was 64; gave 8 bytes to seed_prize_pool)
+        + 8 * 4    // ticket_prize_pool, lp_guarantee_reserved, lp_loss_reserved, player_funded_prizes
+        + 24; // reserved padding
 
     pub fn is_open(&self) -> bool {
         matches!(self.state, RoundState::Open)

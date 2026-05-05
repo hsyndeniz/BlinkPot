@@ -19,6 +19,8 @@ pub struct ConfigParams {
     pub default_ticket_price: u64,
     pub default_round_duration_secs: i64,
     pub register_window_secs: i64,
+    pub guaranteed_prize_pool: u64,
+    pub draw_timeout_slots: u64,
     pub normal_ball_max: u8,
     pub bonusball_max: u8,
     pub lp_edge_bps: u16,
@@ -42,6 +44,8 @@ pub struct Config {
     pub default_ticket_price: u64,
     pub default_round_duration_secs: i64,
     pub register_window_secs: i64,
+    pub guaranteed_prize_pool: u64,
+    pub draw_timeout_slots: u64,
     pub normal_ball_max: u8,
     pub bonusball_max: u8,
     pub lp_edge_bps: u16,
@@ -53,15 +57,34 @@ pub struct Config {
 }
 
 impl Config {
-    pub const LEN: usize = 32 + 32 + 1 + 1 + 1 + 1 + 1
-        + 8 + 8 + 8 + 1 + 1 + 2 + 2 + 2 + 8
+    pub const LEN: usize = 32
+        + 32
+        + 1
+        + 1
+        + 1
+        + 1
+        + 1
+        + 8
+        + 8
+        + 8
+        + 8
+        + 8
+        + 1
+        + 1
+        + 2
+        + 2
+        + 2
+        + 8
         + 2 * TIER_COUNT
-        + 1 + 32;
+        + 1
+        + 32;
 
     pub fn apply_params(&mut self, params: &ConfigParams) {
         self.default_ticket_price = params.default_ticket_price;
         self.default_round_duration_secs = params.default_round_duration_secs;
         self.register_window_secs = params.register_window_secs;
+        self.guaranteed_prize_pool = params.guaranteed_prize_pool;
+        self.draw_timeout_slots = params.draw_timeout_slots;
         self.normal_ball_max = params.normal_ball_max;
         self.bonusball_max = params.bonusball_max;
         self.lp_edge_bps = params.lp_edge_bps;

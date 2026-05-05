@@ -12,8 +12,11 @@ use crate::math::validate_tier_payout_bps;
 use crate::state::config::{Config, ConfigParams, RoundCounter};
 use crate::state::lp::LpVault;
 
-fn validate_params(params: &ConfigParams) -> Result<()> {
-    require!(params.default_ticket_price > 0, LotteryError::InvalidTicketPrice);
+pub(crate) fn validate_params(params: &ConfigParams) -> Result<()> {
+    require!(
+        params.default_ticket_price > 0,
+        LotteryError::InvalidTicketPrice
+    );
     require!(
         params.default_round_duration_secs >= MIN_ROUND_DURATION_SECS
             && params.default_round_duration_secs <= MAX_ROUND_DURATION_SECS,
@@ -27,14 +30,73 @@ fn validate_params(params: &ConfigParams) -> Result<()> {
         params.bonusball_max >= MIN_BONUSBALL_MAX && params.bonusball_max <= MAX_BONUSBALL_MAX,
         LotteryError::InvalidBonusballRange
     );
-    require!(params.lp_edge_bps as u64 <= BPS_DENOM, LotteryError::InvalidConfig);
-    require!(params.referral_fee_bps as u64 <= BPS_DENOM, LotteryError::InvalidConfig);
+    require!(
+        params.lp_edge_bps as u64 <= BPS_DENOM,
+        LotteryError::InvalidConfig
+    );
+    require!(
+        params.referral_fee_bps as u64 <= BPS_DENOM,
+        LotteryError::InvalidConfig
+    );
+    require!(
+        params.lp_edge_bps as u64 + params.referral_fee_bps as u64 <= BPS_DENOM,
+        LotteryError::InvalidConfig
+    );
     require!(
         params.referral_win_share_bps as u64 <= BPS_DENOM,
         LotteryError::InvalidConfig
     );
+    require!(params.draw_timeout_slots > 0, LotteryError::InvalidConfig);
     validate_tier_payout_bps(&params.tier_payout_bps)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants::TIER_COUNT;
+    use crate::state::config::UntakenTierDestination;
+
+    fn valid_params() -> ConfigParams {
+        let mut tier_payout_bps = [0u16; TIER_COUNT];
+        tier_payout_bps[1] = 500;
+        tier_payout_bps[11] = 7_000;
+        ConfigParams {
+            default_ticket_price: 1_000_000,
+            default_round_duration_secs: MIN_ROUND_DURATION_SECS,
+            register_window_secs: 0,
+            guaranteed_prize_pool: 0,
+            draw_timeout_slots: 10,
+            normal_ball_max: 30,
+            bonusball_max: 15,
+            lp_edge_bps: 9_000,
+            referral_fee_bps: 800,
+            referral_win_share_bps: 800,
+            lp_pool_cap: 0,
+            tier_payout_bps,
+            untaken_tier_destination: UntakenTierDestination::NextRound,
+        }
+    }
+
+    #[test]
+    fn validate_params_allows_zero_guarantee() {
+        validate_params(&valid_params()).unwrap();
+    }
+
+    #[test]
+    fn validate_params_rejects_zero_draw_timeout() {
+        let mut params = valid_params();
+        params.draw_timeout_slots = 0;
+        assert!(validate_params(&params).is_err());
+    }
+
+    #[test]
+    fn validate_params_rejects_fee_split_over_100_percent() {
+        let mut params = valid_params();
+        params.lp_edge_bps = 9_500;
+        params.referral_fee_bps = 800;
+        assert!(validate_params(&params).is_err());
+    }
 }
 
 #[derive(Accounts)]
@@ -104,10 +166,7 @@ pub struct InitializeConfig<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
-pub fn initialize_config(
-    ctx: Context<InitializeConfig>,
-    params: ConfigParams,
-) -> Result<()> {
+pub fn initialize_config(ctx: Context<InitializeConfig>, params: ConfigParams) -> Result<()> {
     validate_params(&params)?;
 
     let config = &mut ctx.accounts.config;
@@ -154,7 +213,9 @@ pub struct UpdateConfig<'info> {
 pub fn update_config(ctx: Context<UpdateConfig>, params: ConfigParams) -> Result<()> {
     validate_params(&params)?;
     ctx.accounts.config.apply_params(&params);
-    emit!(ConfigUpdated { admin: ctx.accounts.admin.key() });
+    emit!(ConfigUpdated {
+        admin: ctx.accounts.admin.key()
+    });
     Ok(())
 }
 

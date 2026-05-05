@@ -20,10 +20,7 @@ declare_id!("GAmpA5BkYnV1dsYfVkYwuVz7LxQai5QRkBSnZp6BVVH");
 pub mod lottery {
     use super::*;
 
-    pub fn initialize_config(
-        ctx: Context<InitializeConfig>,
-        params: ConfigParams,
-    ) -> Result<()> {
+    pub fn initialize_config(ctx: Context<InitializeConfig>, params: ConfigParams) -> Result<()> {
         instructions::admin::initialize_config(ctx, params)
     }
 
@@ -37,6 +34,10 @@ pub mod lottery {
 
     pub fn set_emergency_mode(ctx: Context<AdminToggle>, enabled: bool) -> Result<()> {
         instructions::admin::set_emergency_mode(ctx, enabled)
+    }
+
+    pub fn enter_round_emergency(ctx: Context<EnterRoundEmergency>) -> Result<()> {
+        instructions::emergency::enter_round_emergency(ctx)
     }
 
     pub fn start_round(
@@ -96,6 +97,10 @@ pub mod lottery {
 
     pub fn claim_referral_fees(ctx: Context<ClaimReferralFees>) -> Result<()> {
         instructions::referral::claim_referral_fees(ctx)
+    }
+
+    pub fn initialize_referral(ctx: Context<InitializeReferral>) -> Result<()> {
+        instructions::referral::initialize_referral(ctx)
     }
 
     pub fn subscribe_daily(
