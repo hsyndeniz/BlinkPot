@@ -13,7 +13,7 @@
     "setup": "npm run anchor-build && npm run codama:js",
     "start": "next start"
   },
-  "description": "Next.js, Tailwind, @solana/kit, Anchor vault program",
+  "description": "Megapot lottery operations console built with Next.js, Anchor, and @solana/kit",
   "keywords": [
     "anchor",
     "kit",
@@ -26,9 +26,11 @@
   "version": "0.0.0",
   "private": true,
   "dependencies": {
+    "@solana-program/token": "^0.13.0",
     "@solana/kit": "^6.3.0",
     "@solana/kit-client-rpc": "^0.7.0",
     "@solana/kit-plugin-rpc": "^0.7.0",
+    "@solana/signers": "^6.8.0",
     "@solana/wallet-standard-features": "^1.3.0",
     "@solana/web3.js": "^1.98.4",
     "@switchboard-xyz/on-demand": "^3.10.1",
@@ -41,7 +43,8 @@
     "react-dom": "19.2.3",
     "sonner": "^2.0.7",
     "swr": "^2.2.0",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "yaml": "^2.8.4"
   },
   "devDependencies": {
     "@codama/nodes-from-anchor": "^1.3.8",

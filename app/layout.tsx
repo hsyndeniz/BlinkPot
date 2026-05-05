@@ -1,4 +1,3 @@
-// @ts-expect-error - global CSS import
 import "./globals.css";
 import type { Metadata } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
@@ -16,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Solana dApp Starter",
-  description: "A minimal Next.js starter powered by @solana/kit",
+  title: "Megapot Lottery",
+  description: "Megapot lottery operations console powered by Solana",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",
