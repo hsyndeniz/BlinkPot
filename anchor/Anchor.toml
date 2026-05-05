@@ -9,7 +9,7 @@ lottery = "GAmpA5BkYnV1dsYfVkYwuVz7LxQai5QRkBSnZp6BVVH"
 vault = "DFSWvXJFAPrvtb6AiVo58gpwqE26d583yFJ5ssUCGJax"
 
 [provider]
-cluster = "devnet"
+cluster = "https://devnet.helius-rpc.com/?api-key=f289f22d-82f8-402d-b080-75d47ba8045e"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

@@ -1,7 +1,7 @@
 [package]
 name = "lottery"
 version = "0.1.0"
-description = "Created with Anchor"
+description = "Megapot-style daily lottery on Solana with Switchboard On-Demand randomness"
 edition = "2021"
 
 [lib]
@@ -14,15 +14,28 @@ cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 anchor-debug = []
 custom-heap = []
 custom-panic = []
 
+# Enable when deploying to devnet; omit (or use default) for mainnet.
+# Controls which Switchboard On-Demand program ID is accepted as the owner of
+# the randomness account — a compile-time rather than runtime choice so a
+# devnet binary cannot be confused by a mainnet randomness account (and vice-versa).
+devnet = []
 
 [dependencies]
-anchor-lang = "1.0.1"
-
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+anchor-spl = { version = "0.32.1", features = ["token"] }
+switchboard-on-demand = "0.12.1"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[dev-dependencies]
+litesvm = "=0.7.1"
+litesvm-token = "=0.7.0"
+solana-sdk = "2.3"
+spl-token = "8"
+spl-associated-token-account = "7"
