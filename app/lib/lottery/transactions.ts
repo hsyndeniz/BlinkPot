@@ -15,7 +15,7 @@ export type LotteryActionPlan = {
   instructions: readonly Instruction[];
   expectedStateChange: string;
   feePayer?: Address;
-  usdcAmount?: string;
+  tokenAmount?: string;
   touchedAccounts?: readonly { label: string; address: Address }[];
   invalidate?: readonly Key[];
   allowMainnet?: boolean;
@@ -26,7 +26,7 @@ function summarize(plan: LotteryActionPlan, cluster: string): string {
     `Action: ${plan.action}`,
     `Cluster: ${cluster}`,
     `Fee payer: ${plan.feePayer ?? "connected wallet"}`,
-    `USDC amount: ${plan.usdcAmount ?? "none"}`,
+    `Token amount: ${plan.tokenAmount ?? "none"}`,
     `Expected change: ${plan.expectedStateChange}`,
     `Instructions: ${plan.instructions.length}`,
   ];

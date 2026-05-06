@@ -94,6 +94,38 @@ export async function findBuyerEntryPda(
   });
 }
 
+/**
+ * PickCounter PDA: counts how many tickets in `roundId` share the exact
+ * `(normals, bonusball)` combo. Created on the first matching ticket buy and
+ * incremented on subsequent ones; at claim time `claim_winnings` divides
+ * `round.perComboPayout[tier]` by this counter so duplicate winners on the
+ * same combo split that combo's allocation evenly.
+ */
+export async function findPickCounterPda(
+  seeds: {
+    roundId: bigint | number;
+    normals: ArrayLike<number>;
+    bonusball: number;
+  },
+  config: { programAddress?: Address } = {}
+): Promise<ProgramDerivedAddress> {
+  const normals = Uint8Array.from(seeds.normals);
+  if (normals.length !== 5) {
+    throw new Error(
+      `PickCounter PDA expects exactly 5 normals, got ${normals.length}`
+    );
+  }
+  return getProgramDerivedAddress({
+    programAddress: config.programAddress ?? LOTTERY_PROGRAM_ID,
+    seeds: [
+      seed("pick_counter"),
+      u64Le(seeds.roundId),
+      normals,
+      Uint8Array.of(seeds.bonusball),
+    ],
+  });
+}
+
 export function pdaAddress<T extends string = string>(
   pda: ProgramDerivedAddress<T>
 ): Address<T> {

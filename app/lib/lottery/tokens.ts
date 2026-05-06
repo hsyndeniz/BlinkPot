@@ -107,6 +107,35 @@ export function formatTokenAmount(
   return fractional ? `${whole}.${fractional}` : whole.toString();
 }
 
+/**
+ * Best-effort symbol lookup for a payment mint. The lottery program is decimals-
+ * and mint-agnostic, so the UI can't hard-code "USDC" — we map well-known mainnet
+ * stablecoin mints by address and fall back to a generic "tokens" label for any
+ * other mint (custom test mints, devnet stables, etc.). If you deploy with a
+ * less-common stable, add its mint here.
+ */
+const KNOWN_TOKEN_SYMBOLS: Readonly<Record<string, string>> = {
+  // Mainnet stables
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: "USDC",
+  Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: "USDT",
+  "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo": "PYUSD",
+  USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA: "USDS",
+  HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr: "EURC",
+  // Devnet USDC (Solana foundation's faucet mint)
+  "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": "USDC",
+};
+
+const FALLBACK_SYMBOL = "tokens";
+
+export function tokenSymbolFor(mint?: Address | string): string {
+  if (!mint) return FALLBACK_SYMBOL;
+  return KNOWN_TOKEN_SYMBOLS[mint as string] ?? FALLBACK_SYMBOL;
+}
+
+export function useTokenSymbol(mint?: Address): string {
+  return tokenSymbolFor(mint);
+}
+
 export function useMint(mint?: Address) {
   const { cluster } = useCluster();
   const client = useSolanaClient();

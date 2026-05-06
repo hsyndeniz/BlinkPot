@@ -53,6 +53,7 @@ import {
   findLpPrincipalPda,
   findBuyerEntryPda,
   findPrizeVaultPda,
+  findPickCounterPda,
   findReferralPda,
   findRoundPda,
   findSubEscrowPda,
@@ -80,6 +81,7 @@ import {
   useMint,
   useTokenAccount,
   useTokenAccountAddress,
+  useTokenSymbol,
 } from "../lib/lottery/tokens";
 import {
   buildBuyTicketsInstruction,
@@ -128,7 +130,7 @@ type ConfigForm = {
   premiumMinAllocationBps: string; // 20% floor e.g. 2000
   dynamicBonusballEnabled: boolean;
   bonusballBase: string; // e.g. 5
-  bonusballPoolStepUsdc: string; // e.g. 10000
+  bonusballPoolStepUnits: string; // e.g. 10000
   maxGuaranteePerRoundBps: string; // e.g. 3000 (30% NAV cap)
   lpPoolCap: string;
   // tierPayoutBps removed (deprecated)
@@ -157,7 +159,7 @@ const defaultConfigForm: ConfigForm = {
   premiumMinAllocationBps: "2000", // 20%
   dynamicBonusballEnabled: true,
   bonusballBase: "5",
-  bonusballPoolStepUsdc: "10000", // $10k step
+  bonusballPoolStepUnits: "10000", // $10k step
   maxGuaranteePerRoundBps: "3000", // 30% cap
   lpPoolCap: "0",
   // tierPayoutBps default removed
@@ -219,10 +221,14 @@ function ticketPayoutEstimate(
   const { matches, hasBonusball } = countTicketMatches(round, ticket);
   const tier = tierForMatch(matches, hasBonusball);
   if (!round.tierIsWinning[tier]) return 0n;
-  return round.payoutPerWinner[tier] ?? 0n;
+  // Returns the per-combo allocation — the actual claim payout is this divided
+  // by the PickCounter.count for the ticket's pick. We don't fetch the counter
+  // here so the displayed value is an upper bound (exact when the user is the
+  // sole holder of the winning combo, otherwise the user gets per_combo / N).
+  return round.perComboPayout[tier] ?? 0n;
 }
 
-function usdcAmountToLpShares(
+function tokenAmountToLpShares(
   amount: bigint,
   totalAssets?: bigint,
   totalShares?: bigint
@@ -252,7 +258,7 @@ type ExtendedConfig = Config & {
   premiumMinAllocationBps?: number;
   dynamicBonusballEnabled?: boolean;
   bonusballBase?: number;
-  bonusballPoolStepUsdc?: bigint;
+  bonusballPoolStepUnits?: bigint;
   maxGuaranteePerRoundBps?: number;
 };
 
@@ -290,8 +296,8 @@ function configToForm(rawConfig: Config, decimals: number): ConfigForm {
       config.premiumMinAllocationBps?.toString() ?? "2000",
     dynamicBonusballEnabled: config.dynamicBonusballEnabled ?? true,
     bonusballBase: config.bonusballBase?.toString() ?? "5",
-    bonusballPoolStepUsdc: formatTokenAmount(
-      config.bonusballPoolStepUsdc ?? BigInt(10_000_000_000),
+    bonusballPoolStepUnits: formatTokenAmount(
+      config.bonusballPoolStepUnits ?? BigInt(10_000_000_000),
       decimals
     ),
     maxGuaranteePerRoundBps:
@@ -394,8 +400,8 @@ function formToConfigParams(
     premiumMinAllocationBps,
     dynamicBonusballEnabled: form.dynamicBonusballEnabled,
     bonusballBase: Number(form.bonusballBase),
-    bonusballPoolStepUsdc: parseTokenAmount(
-      form.bonusballPoolStepUsdc,
+    bonusballPoolStepUnits: parseTokenAmount(
+      form.bonusballPoolStepUnits,
       decimals
     ),
     maxGuaranteePerRoundBps: Number(form.maxGuaranteePerRoundBps),
@@ -640,15 +646,17 @@ function AddressLink(props: { address?: Address; label?: string }) {
 function ConfigFormFields(props: {
   form: ConfigForm;
   onChange: (form: ConfigForm) => void;
+  symbol: string;
 }) {
   const set = (key: keyof ConfigForm) => (value: string | boolean) =>
     props.onChange({ ...props.form, [key]: value });
+  const { symbol } = props;
 
   return (
     <div className="grid gap-3 md:grid-cols-3">
       {/* Basic parameters */}
       <Field
-        label="Ticket price (USDC)"
+        label={`Ticket price (${symbol})`}
         value={props.form.defaultTicketPrice}
         onChange={set("defaultTicketPrice")}
       />
@@ -712,7 +720,7 @@ function ConfigFormFields(props: {
         Tier Math (Guaranteed Min + Premium)
       </h3>
       <label className="grid gap-1 text-xs font-medium text-muted md:col-span-2">
-        Tier min payout per winner (USDC, CSV)
+        Tier min payout per winner ({symbol}, CSV)
         <textarea
           value={props.form.tierMinPayoutPerWinner}
           onChange={(event) =>
@@ -762,9 +770,9 @@ function ConfigFormFields(props: {
         onChange={set("bonusballBase")}
       />
       <Field
-        label="Bonusball pool step (USDC)"
-        value={props.form.bonusballPoolStepUsdc}
-        onChange={set("bonusballPoolStepUsdc")}
+        label={`Bonusball pool step (${symbol})`}
+        value={props.form.bonusballPoolStepUnits}
+        onChange={set("bonusballPoolStepUnits")}
       />
 
       {/* Guaranteed pool (Epic 4) */}
@@ -772,7 +780,7 @@ function ConfigFormFields(props: {
         Guaranteed Prize Pool
       </h3>
       <Field
-        label="Guaranteed prize pool (USDC)"
+        label={`Guaranteed prize pool (${symbol})`}
         value={props.form.guaranteedPrizePool}
         onChange={set("guaranteedPrizePool")}
       />
@@ -786,7 +794,7 @@ function ConfigFormFields(props: {
       {/* Other parameters */}
       <h3 className="col-span-3 mt-2 text-sm font-semibold">Other</h3>
       <Field
-        label="LP pool cap (USDC)"
+        label={`LP pool cap (${symbol})`}
         value={props.form.lpPoolCap}
         onChange={set("lpPoolCap")}
       />
@@ -809,29 +817,29 @@ function ConfigFormFields(props: {
   );
 }
 
-function useProgramTokenAddresses(usdcMint?: Address, owner?: Address) {
+function useProgramTokenAddresses(paymentMint?: Address, owner?: Address) {
   const { cluster } = useCluster();
 
   return useSWR(
-    usdcMint
+    paymentMint
       ? ([
           "lottery",
           "pdas",
           "programTokens",
           cluster,
-          usdcMint,
+          paymentMint,
           owner ?? "",
         ] as const)
       : null,
     async ([, , , , mint, wallet]) => {
       const [prizeVault, lpPrincipal] = await Promise.all([
-        findPrizeVaultPda({ usdcMint: mint }).then(pdaAddress),
-        findLpPrincipalPda({ usdcMint: mint }).then(pdaAddress),
+        findPrizeVaultPda({ paymentMint: mint }).then(pdaAddress),
+        findLpPrincipalPda({ paymentMint: mint }).then(pdaAddress),
       ]);
       const subEscrow = wallet
         ? await findSubEscrowPda({
             owner: wallet as Address,
-            usdcMint: mint,
+            paymentMint: mint,
           }).then(pdaAddress)
         : undefined;
       return { prizeVault, lpPrincipal, subEscrow };
@@ -913,23 +921,23 @@ export function LotteryConsole() {
     tickets.tickets?.length,
     rounds.rounds?.length,
   ]);
-  const mintInfo = useMint(config?.usdcMint);
-  const userUsdc = useTokenAccount(walletAddress, config?.usdcMint);
+  const mintInfo = useMint(config?.paymentMint);
+  const userPaymentAccount = useTokenAccount(walletAddress, config?.paymentMint);
   const programTokens = useProgramTokenAddresses(
-    config?.usdcMint,
+    config?.paymentMint,
     walletAddress
   );
   const prizeVaultBalance = useTokenAccountAddress(
     programTokens.data?.prizeVault,
-    config?.usdcMint
+    config?.paymentMint
   );
   const lpPrincipalBalance = useTokenAccountAddress(
     programTokens.data?.lpPrincipal,
-    config?.usdcMint
+    config?.paymentMint
   );
   const subEscrowBalance = useTokenAccountAddress(
     programTokens.data?.subEscrow,
-    config?.usdcMint
+    config?.paymentMint
   );
 
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -967,6 +975,12 @@ export function LotteryConsole() {
 
   const isAdmin = !!(config && walletAddress && config.admin === walletAddress);
   const decimals = mintInfo.decimals;
+  // Best-effort symbol for the configured payment mint (or the in-progress
+  // setup mint when no config exists yet). Falls back to "tokens" for unknown
+  // mints — see `useTokenSymbol` for the recognised mainnet mapping.
+  const symbol = useTokenSymbol(
+    config?.paymentMint ?? setupMintAddress ?? undefined
+  );
   const effectiveConfigForm =
     config && !configFormDirty ? configToForm(config, decimals) : configForm;
   const handleConfigFormChange = (nextForm: ConfigForm) => {
@@ -1153,12 +1167,12 @@ export function LotteryConsole() {
       }
 
       const totalCost = activeRound.round.ticketPrice * BigInt(picks.length);
-      if (userUsdc.amount < totalCost) {
-        throw new Error("Insufficient USDC balance for this ticket batch.");
+      if (userPaymentAccount.amount < totalCost) {
+        throw new Error(`Insufficient ${symbol} balance for this ticket batch.`);
       }
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
-        cfg.usdcMint
+        cfg.paymentMint
       );
       const { referrer, referrerAccount, parentReferrerAccount } =
         await validateOptionalReferrer(referrerInput);
@@ -1167,7 +1181,7 @@ export function LotteryConsole() {
         buyer: walletSigner,
         round: activeRound.address,
         roundId: activeRound.round.roundId,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         buyerTokenAccount: ata,
         picks,
         firstTicketIndex,
@@ -1180,7 +1194,7 @@ export function LotteryConsole() {
         action: "Buy tickets",
         instructions: [createAta, built.instruction],
         expectedStateChange: `${picks.length} ticket account(s) created and buyer entry advanced.`,
-        usdcAmount: formatTokenAmount(totalCost, decimals),
+        tokenAmount: formatTokenAmount(totalCost, decimals),
         touchedAccounts: [
           { label: "round", address: activeRound.address },
           { label: "buyer entry", address: built.buyerEntry },
@@ -1199,7 +1213,7 @@ export function LotteryConsole() {
       const activeRound = requireRound();
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
-        cfg.usdcMint
+        cfg.paymentMint
       );
       const referrerAccount = ticket.data.hasReferrer
         ? pdaAddress(await findReferralPda({ referrer: ticket.data.referrer }))
@@ -1209,11 +1223,22 @@ export function LotteryConsole() {
             await findReferralPda({ referrer: ticket.data.parentReferrer })
           )
         : undefined;
+      // PickCounter PDA for this ticket's exact (normals, bonusball). Required by
+      // claim_winnings — its `count` is the divisor that splits the per-combo
+      // payout among duplicate winners on the same pick.
+      const pickCounter = pdaAddress(
+        await findPickCounterPda({
+          roundId: ticket.data.roundId,
+          normals: ticket.data.normals,
+          bonusball: ticket.data.bonusball,
+        })
+      );
       const instruction = await getClaimWinningsInstructionAsync({
         owner: walletSigner,
         round: activeRound.address,
         ticket: ticket.address,
-        usdcMint: cfg.usdcMint,
+        pickCounter,
+        paymentMint: cfg.paymentMint,
         winnerTokenAccount: ata,
         referrerAccount,
         parentReferrerAccount,
@@ -1246,7 +1271,7 @@ export function LotteryConsole() {
       }
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
-        cfg.usdcMint
+        cfg.paymentMint
       );
       const referrerAccount = ticket.data.hasReferrer
         ? pdaAddress(await findReferralPda({ referrer: ticket.data.referrer }))
@@ -1260,7 +1285,7 @@ export function LotteryConsole() {
         owner: walletSigner,
         round: activeRound.address,
         ticket: ticket.address,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         ownerTokenAccount: ata,
         referrerAccount,
         parentReferrerAccount,
@@ -1283,15 +1308,15 @@ export function LotteryConsole() {
       const cfg = requireConfig();
       const amount = parseTokenAmount(lpDepositInput, decimals);
       if (amount <= 0n) throw new Error("Enter a deposit amount.");
-      if (userUsdc.amount < amount)
-        throw new Error("Insufficient USDC balance.");
+      if (userPaymentAccount.amount < amount)
+        throw new Error(`Insufficient ${symbol} balance.`);
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
-        cfg.usdcMint
+        cfg.paymentMint
       );
       const instruction = await getLpDepositInstructionAsync({
         owner: walletSigner,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         ownerTokenAccount: ata,
         amount,
       });
@@ -1300,7 +1325,7 @@ export function LotteryConsole() {
         instructions: [createAta, instruction],
         expectedStateChange:
           "LP position receives pool shares and LP principal increases.",
-        usdcAmount: formatTokenAmount(amount, decimals),
+        tokenAmount: formatTokenAmount(amount, decimals),
         touchedAccounts: [
           { label: "LP vault", address: lpVault.address! },
           {
@@ -1315,11 +1340,11 @@ export function LotteryConsole() {
     runAction("Initiate LP withdraw", async () => {
       const walletSigner = requireSigner();
       const amount = parseTokenAmount(lpWithdrawInput || "0", decimals);
-      if (amount <= 0n) throw new Error("Enter a USDC amount.");
+      if (amount <= 0n) throw new Error(`Enter a ${symbol} amount.`);
       const position = lpPosition.position;
       if (!position) throw new Error("No LP position is available.");
       const vault = lpVault.lpVault;
-      const shares = usdcAmountToLpShares(
+      const shares = tokenAmountToLpShares(
         amount,
         vault?.totalAssets,
         vault?.totalShares
@@ -1338,7 +1363,7 @@ export function LotteryConsole() {
         action: "Initiate LP withdraw",
         instructions: [instruction],
         expectedStateChange:
-          "USDC amount is converted to LP shares and moved to pending withdrawal.",
+          `${symbol} amount is converted to LP shares and moved to pending withdrawal.`,
         touchedAccounts: [
           { label: "LP vault", address: lpVault.address! },
           {
@@ -1359,7 +1384,7 @@ export function LotteryConsole() {
       }
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
-        cfg.usdcMint
+        cfg.paymentMint
       );
       const pendingRound = pdaAddress(
         await findRoundPda(position.pendingWithdrawRound)
@@ -1367,7 +1392,7 @@ export function LotteryConsole() {
       const instruction = await getLpFinalizeWithdrawInstructionAsync({
         owner: walletSigner,
         pendingRound,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         ownerTokenAccount: ata,
       });
       await send({
@@ -1391,11 +1416,11 @@ export function LotteryConsole() {
       }
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
-        cfg.usdcMint
+        cfg.paymentMint
       );
       const instruction = await getEmergencyLpWithdrawInstructionAsync({
         owner: walletSigner,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         ownerTokenAccount: ata,
       });
 
@@ -1403,7 +1428,7 @@ export function LotteryConsole() {
         action: "Emergency LP withdraw",
         instructions: [createAta, instruction],
         expectedStateChange:
-          "All LP shares are burned and USDC is returned to owner.",
+          `All LP shares are burned and ${symbol} is returned to owner.`,
         touchedAccounts: [
           { label: "LP vault", address: lpVault.address! },
           { label: "owner ATA", address: ata },
@@ -1454,18 +1479,18 @@ export function LotteryConsole() {
       }
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
-        cfg.usdcMint
+        cfg.paymentMint
       );
       const instruction = await getClaimReferralFeesInstructionAsync({
         referrer: walletSigner,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         referrerTokenAccount: ata,
       });
       await send({
         action: "Claim referral fees",
         instructions: [createAta, instruction],
         expectedStateChange: "Accrued referral fees are paid and reset.",
-        usdcAmount: formatTokenAmount(referral.referral.accrued, decimals),
+        tokenAmount: formatTokenAmount(referral.referral.accrued, decimals),
         touchedAccounts: [
           { label: "referral", address: referral.address! },
           { label: "referrer ATA", address: ata },
@@ -1486,18 +1511,18 @@ export function LotteryConsole() {
         throw new Error("Subscription days must be greater than 0.");
       const escrowAmount =
         cfg.defaultTicketPrice * BigInt(dailyTicketCount) * BigInt(days);
-      if (userUsdc.amount < escrowAmount) {
-        throw new Error("Insufficient USDC balance for subscription escrow.");
+      if (userPaymentAccount.amount < escrowAmount) {
+        throw new Error(`Insufficient ${symbol} balance for subscription escrow.`);
       }
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
-        cfg.usdcMint
+        cfg.paymentMint
       );
       const { referrer, referrerAccount } =
         await validateOptionalReferrer(referrerInput);
       const instruction = await getSubscribeDailyInstructionAsync({
         owner: walletSigner,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         ownerTokenAccount: ata,
         referrerAccount,
         dailyTicketCount,
@@ -1509,7 +1534,7 @@ export function LotteryConsole() {
         instructions: [createAta, instruction],
         expectedStateChange:
           "Subscription PDA and escrow are initialized or refreshed.",
-        usdcAmount: formatTokenAmount(escrowAmount, decimals),
+        tokenAmount: formatTokenAmount(escrowAmount, decimals),
         touchedAccounts: [
           {
             label: "subscription",
@@ -1526,11 +1551,11 @@ export function LotteryConsole() {
       const cfg = requireConfig();
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
-        cfg.usdcMint
+        cfg.paymentMint
       );
       const instruction = await getCancelSubscriptionInstructionAsync({
         owner: walletSigner,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         ownerTokenAccount: ata,
       });
       await send({
@@ -1560,7 +1585,7 @@ export function LotteryConsole() {
         ? asAddress(subscriptionOwnerInput)
         : walletSigner.address;
       const subEscrow = pdaAddress(
-        await findSubEscrowPda({ owner, usdcMint: cfg.usdcMint })
+        await findSubEscrowPda({ owner, paymentMint: cfg.paymentMint })
       );
       const subscriptionAddress = pdaAddress(
         await findSubscriptionPda({ owner })
@@ -1617,7 +1642,7 @@ export function LotteryConsole() {
         owner,
         round: activeRound.address,
         roundId: activeRound.round.roundId,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         picks,
         firstTicketIndex: entry.exists ? entry.data.ticketCount : 0n,
         referrerAccount,
@@ -1644,14 +1669,14 @@ export function LotteryConsole() {
     runAction("Initialize config", async () => {
       const walletSigner = requireSigner();
       const mint = setupMintAddress;
-      if (!mint) throw new Error("Enter a valid USDC mint address.");
+      if (!mint) throw new Error("Enter a valid payment mint address.");
       const params = formToConfigParams(
         effectiveConfigForm,
         setupMint.decimals
       );
       const instruction = await getInitializeConfigInstructionAsync({
         admin: walletSigner,
-        usdcMint: mint,
+        paymentMint: mint,
         params,
       });
       await send({
@@ -1659,7 +1684,7 @@ export function LotteryConsole() {
         instructions: [instruction],
         expectedStateChange:
           "Config, round counter, prize vault, and LP vault are initialized.",
-        touchedAccounts: [{ label: "USDC mint", address: mint }],
+        touchedAccounts: [{ label: "Payment mint", address: mint }],
       });
     });
 
@@ -1719,12 +1744,18 @@ export function LotteryConsole() {
   const handleEnterRoundEmergency = () =>
     runAction("Enter round emergency", async () => {
       const walletSigner = requireSigner();
+      const cfg = requireConfig();
       const activeRound = requireRound();
       if (!isAdmin)
         throw new Error("Only config.admin can enter round emergency.");
+      // enter_round_emergency now atomically returns the LP guarantee from
+      // prize_vault → lp_principal (M3 fix), so it requires the payment mint and
+      // the prize/lp accounts. Codama auto-derives the optional PDAs from the
+      // payment mint; we pass it explicitly.
       const instruction = await getEnterRoundEmergencyInstructionAsync({
         admin: walletSigner,
         round: activeRound.address,
+        paymentMint: cfg.paymentMint,
       });
       await send({
         action: "Enter round emergency",
@@ -1743,7 +1774,7 @@ export function LotteryConsole() {
       const instruction = await getArchiveRoundInstructionAsync({
         admin: walletSigner,
         round: activeRound.address,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
       });
       await send({
         action: "Archive round",
@@ -1782,7 +1813,7 @@ export function LotteryConsole() {
         starter: walletSigner,
         previousRound,
         round: nextRound,
-        usdcMint: cfg.usdcMint,
+        paymentMint: cfg.paymentMint,
         ticketPrice,
         durationSeconds,
         bonusballMax,
@@ -1929,12 +1960,12 @@ export function LotteryConsole() {
     {
       label: "Prize pool",
       value: formatTokenAmount(round?.prizePool, decimals),
-      subvalue: "USDC",
+      subvalue: symbol,
     },
     {
       label: "Seed pool",
       value: formatTokenAmount(round?.seedPrizePool, decimals),
-      subvalue: "USDC",
+      subvalue: symbol,
     },
     {
       label: "LP guarantee",
@@ -1958,7 +1989,7 @@ export function LotteryConsole() {
     { label: "Config", address: configState.address },
     { label: "Round counter", address: currentRound.counter.address },
     { label: "Current round", address: roundAddress },
-    { label: "USDC mint", address: config?.usdcMint },
+    { label: "Payment mint", address: config?.paymentMint },
     { label: "Prize vault", address: programTokens.data?.prizeVault },
     { label: "LP vault", address: lpVault.address },
     { label: "LP principal", address: programTokens.data?.lpPrincipal },
@@ -1967,7 +1998,7 @@ export function LotteryConsole() {
     { label: "Subscription", address: subscription.address },
     { label: "Sub escrow", address: programTokens.data?.subEscrow },
     { label: "Buyer entry", address: buyerEntry.address },
-    { label: "User USDC ATA", address: userUsdc.ata },
+    { label: `User ${symbol} ATA`, address: userPaymentAccount.ata },
     {
       label: "Switchboard randomness",
       address: tryParseAddress(randomnessInput),
@@ -2234,7 +2265,7 @@ export function LotteryConsole() {
                         <tr>
                           <th className="py-2">Tier</th>
                           <th>Winning?</th>
-                          <th>Payout / winner</th>
+                          <th>Payout / combo</th>
                           <th>Paid count</th>
                           <th>Paid amount</th>
                         </tr>
@@ -2246,7 +2277,7 @@ export function LotteryConsole() {
                             <td>{round?.tierIsWinning[tier] ? "yes" : "no"}</td>
                             <td>
                               {formatTokenAmount(
-                                round?.payoutPerWinner[tier],
+                                round?.perComboPayout[tier],
                                 decimals
                               )}
                             </td>
@@ -2315,9 +2346,9 @@ export function LotteryConsole() {
                       </div>
                       <div className="grid gap-2 rounded-lg border border-border-low bg-background/60 p-3 text-xs text-muted">
                         <div className="flex justify-between gap-3">
-                          <span>User USDC</span>
+                          <span>User {symbol}</span>
                           <span className="font-mono">
-                            {formatTokenAmount(userUsdc.amount, decimals)}
+                            {formatTokenAmount(userPaymentAccount.amount, decimals)}
                           </span>
                         </div>
                         <div className="flex justify-between gap-3">
@@ -2568,7 +2599,7 @@ export function LotteryConsole() {
                                     ticket.data.pricePaid,
                                     decimals
                                   )}{" "}
-                                  USDC, payout estimate{" "}
+                                  {symbol}, payout estimate{" "}
                                   {formatTokenAmount(
                                     ticketPayoutEstimate(round, ticket.data),
                                     decimals
@@ -2647,7 +2678,7 @@ export function LotteryConsole() {
                         lpVault.lpVault?.totalAssets,
                         decimals
                       )}
-                      subvalue="USDC"
+                      subvalue={symbol}
                     />
                     <Metric
                       label="Total shares"
@@ -2671,7 +2702,7 @@ export function LotteryConsole() {
                         lpVault.lpVault?.lifetimeEdgeEarned,
                         decimals
                       )}
-                      subvalue="USDC"
+                      subvalue={symbol}
                     />
                     <Metric
                       label="Lifetime jackpot loss"
@@ -2679,7 +2710,7 @@ export function LotteryConsole() {
                         lpVault.lpVault?.lifetimeJackpotLoss,
                         decimals
                       )}
-                      subvalue="USDC"
+                      subvalue={symbol}
                     />
                   </div>
                   <p className="mt-4 text-sm text-muted">
@@ -2690,15 +2721,15 @@ export function LotteryConsole() {
                 <Panel title="LP Actions">
                   <div className="grid gap-2 rounded-lg border border-border-low bg-background/60 p-3 text-xs text-muted mb-3">
                     <div className="flex justify-between gap-3">
-                      <span>User USDC</span>
+                      <span>User {symbol}</span>
                       <span className="font-mono">
-                        {formatTokenAmount(userUsdc.amount, decimals)}
+                        {formatTokenAmount(userPaymentAccount.amount, decimals)}
                       </span>
                     </div>
                   </div>
                   <div className="grid gap-3">
                     <Field
-                      label="Deposit USDC"
+                      label={`Deposit ${symbol}`}
                       value={lpDepositInput}
                       onChange={setLpDepositInput}
                     />
@@ -2712,7 +2743,7 @@ export function LotteryConsole() {
                       </ActionButton>
                     </div>
                     <Field
-                      label="Withdraw amount (USDC)"
+                      label={`Withdraw amount (${symbol})`}
                       value={lpWithdrawInput}
                       onChange={setLpWithdrawInput}
                       placeholder="e.g. 100"
@@ -2772,7 +2803,7 @@ export function LotteryConsole() {
                       referral.referral?.accrued,
                       decimals
                     )}
-                    subvalue="USDC"
+                    subvalue={symbol}
                   />
                   <Metric
                     label="Lifetime earned (1st)"
@@ -2780,7 +2811,7 @@ export function LotteryConsole() {
                       referral.referral?.lifetimeEarnedFirst,
                       decimals
                     )}
-                    subvalue="USDC direct"
+                    subvalue={`${symbol} direct`}
                   />
                   <Metric
                     label="Lifetime earned (2nd)"
@@ -2788,7 +2819,7 @@ export function LotteryConsole() {
                       referral.referral?.lifetimeEarnedSecond,
                       decimals
                     )}
-                    subvalue="USDC upstream"
+                    subvalue={`${symbol} upstream`}
                   />
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -2852,7 +2883,7 @@ export function LotteryConsole() {
                           ),
                         decimals
                       )}{" "}
-                      USDC
+                      {symbol}
                     </p>
                     <div>
                       <ActionButton
@@ -2954,7 +2985,7 @@ export function LotteryConsole() {
                         decimals={setupMint.decimals}
                         detected={!!setupMint.mint}
                       />
-                      <ConfigFormFields
+                      <ConfigFormFields symbol={symbol}
                         form={effectiveConfigForm}
                         onChange={handleConfigFormChange}
                       />
@@ -2981,7 +3012,7 @@ export function LotteryConsole() {
                     }
                   >
                     <DecimalsHeadsUp decimals={decimals} detected />
-                    <ConfigFormFields
+                    <ConfigFormFields symbol={symbol}
                       form={effectiveConfigForm}
                       onChange={handleConfigFormChange}
                     />
@@ -3049,7 +3080,7 @@ export function LotteryConsole() {
                       onChange={setStartBonusMaxInput}
                     />
                     <Field
-                      label="Guaranteed prize pool override (USDC)"
+                      label={`Guaranteed prize pool override (${symbol})`}
                       value={startGuaranteedPoolInput}
                       onChange={setStartGuaranteedPoolInput}
                       placeholder={formatTokenAmount(
