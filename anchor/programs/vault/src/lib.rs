@@ -4,7 +4,7 @@ use anchor_lang::system_program::{transfer, Transfer};
 #[cfg(test)]
 mod tests;
 
-declare_id!("23hgxTvWbhm2VxjbEMrQE3DY78gXezq3vzfuEuWKtbGG");
+declare_id!("4thq1WtZShkBiVV9vdp875ZKp5MymnzihQYN5ezB3CfL");
 
 #[program]
 pub mod vault {

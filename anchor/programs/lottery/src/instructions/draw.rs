@@ -18,7 +18,7 @@ const EXPECTED_SB_PID: Pubkey = ON_DEMAND_MAINNET_PID;
 use crate::constants::{CONFIG_SEED, ROUND_SEED};
 use crate::errors::LotteryError;
 use crate::events::{DrawCommitted, DrawSettled};
-use crate::math::derive_winning_numbers;
+use crate::math::{compute_payouts_per_winner, derive_winning_numbers};
 use crate::state::config::Config;
 use crate::state::round::{Round, RoundState};
 
@@ -220,15 +220,31 @@ pub fn reveal_draw(ctx: Context<RevealDraw>) -> Result<()> {
     let (normals, bonusball) =
         derive_winning_numbers(&bytes, round.normal_ball_max, round.bonusball_max)?;
 
+    // Compute the fixed per-tier payout for every winning ticket, freezing the prize-pool
+    // -> tier split here so claims become a pure lookup.
+    let plan = compute_payouts_per_winner(
+        round.prize_pool,
+        round.normal_ball_max,
+        round.bonusball_max,
+        &round.tier_is_winning,
+        &ctx.accounts.config.tier_premium_weight_bps,
+        &ctx.accounts.config.tier_min_payout_per_winner,
+        ctx.accounts.config.premium_min_allocation_bps,
+    )?;
+
     round.winning_normals = normals;
     round.winning_bonusball = bonusball;
-    round.state = RoundState::Settled;
+    round.payout_per_winner = plan.payout_per_winner;
+    round.used_minimum_payouts = plan.used_minimum_payouts;
+    round.state = RoundState::Claimable;
     round.settled_at = clock.unix_timestamp;
 
     emit!(DrawSettled {
         round_id: round.round_id,
         winning_normals: normals,
         winning_bonusball: bonusball,
+        payout_per_winner: plan.payout_per_winner,
+        used_minimum_payouts: plan.used_minimum_payouts,
     });
     Ok(())
 }

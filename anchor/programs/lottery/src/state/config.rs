@@ -38,11 +38,15 @@ pub struct ConfigParams {
     pub lp_pool_cap: u64,
 
     /// Premium pool weights per tier in BPS (must sum to exactly 10_000).
-    /// tier_premium_weight_bps[0] must be 0.
+    /// Non-winning tiers must have weight 0.
     pub tier_premium_weight_bps: [u16; TIER_COUNT],
     /// Guaranteed minimum payout per winner per tier (USDC base units).
     /// 0 = no minimum for that tier.
     pub tier_min_payout_per_winner: [u64; TIER_COUNT],
+    /// Whether a tier is claimable. Megapot defaults: tier 0 (no match) and tier 2
+    /// (1 normal, no bonus) are non-winning; everything else is winning even if its
+    /// premium weight is 0 (e.g. "bonusball only" earns just the guaranteed minimum).
+    pub tier_is_winning: [bool; TIER_COUNT],
     /// Floor (in BPS) of prize_pool that must remain in the premium pool after guaranteed
     /// minimums are paid. If guaranteed minimums would consume more than (1 - floor),
     /// the round skips guaranteed minimums and pays purely by premium weights.
@@ -85,6 +89,7 @@ pub struct Config {
 
     pub tier_premium_weight_bps: [u16; TIER_COUNT],
     pub tier_min_payout_per_winner: [u64; TIER_COUNT],
+    pub tier_is_winning: [bool; TIER_COUNT],
     pub premium_min_allocation_bps: u16,
 
     pub untaken_tier_destination: UntakenTierDestination,
@@ -105,6 +110,7 @@ impl Config {
         + 8                             // lp_pool_cap
         + 2 * TIER_COUNT                // tier_premium_weight_bps
         + 8 * TIER_COUNT                // tier_min_payout_per_winner
+        + 1 * TIER_COUNT                // tier_is_winning
         + 2                             // premium_min_allocation_bps
         + 1 + 32                        // untaken_tier_destination + enum padding
         + 1 + 1 + 8                     // dynamic_bonusball + base + step
@@ -126,6 +132,7 @@ impl Config {
         self.lp_pool_cap = params.lp_pool_cap;
         self.tier_premium_weight_bps = params.tier_premium_weight_bps;
         self.tier_min_payout_per_winner = params.tier_min_payout_per_winner;
+        self.tier_is_winning = params.tier_is_winning;
         self.premium_min_allocation_bps = params.premium_min_allocation_bps;
         self.untaken_tier_destination = params.untaken_tier_destination;
         self.dynamic_bonusball_enabled = params.dynamic_bonusball_enabled;

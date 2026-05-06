@@ -471,9 +471,7 @@ pub fn process_subscription<'info>(
             price_paid: ticket_price,
             normals: pick.normals,
             bonusball: pick.bonusball,
-            tallied: false,
             claimed: false,
-            tier: 0,
             bump,
         };
         let mut data = ticket_account.try_borrow_mut_data()?;
@@ -569,10 +567,6 @@ pub fn process_subscription<'info>(
         .ok_or(error!(LotteryError::MathOverflow))?;
     round.prize_pool = round
         .prize_pool
-        .checked_add(ticket_prize_contribution)
-        .ok_or(error!(LotteryError::MathOverflow))?;
-    round.ticket_prize_pool = round
-        .ticket_prize_pool
         .checked_add(ticket_prize_contribution)
         .ok_or(error!(LotteryError::MathOverflow))?;
     round.lp_edge_accrued = round

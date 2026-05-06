@@ -85,6 +85,7 @@ export type Config = {
   lpPoolCap: bigint;
   tierPremiumWeightBps: Array<number>;
   tierMinPayoutPerWinner: Array<bigint>;
+  tierIsWinning: Array<boolean>;
   premiumMinAllocationBps: number;
   untakenTierDestination: UntakenTierDestination;
   dynamicBonusballEnabled: boolean;
@@ -115,6 +116,7 @@ export type ConfigArgs = {
   lpPoolCap: number | bigint;
   tierPremiumWeightBps: Array<number>;
   tierMinPayoutPerWinner: Array<number | bigint>;
+  tierIsWinning: Array<boolean>;
   premiumMinAllocationBps: number;
   untakenTierDestination: UntakenTierDestinationArgs;
   dynamicBonusballEnabled: boolean;
@@ -152,6 +154,7 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
         "tierMinPayoutPerWinner",
         getArrayEncoder(getU64Encoder(), { size: 12 }),
       ],
+      ["tierIsWinning", getArrayEncoder(getBooleanEncoder(), { size: 12 })],
       ["premiumMinAllocationBps", getU16Encoder()],
       ["untakenTierDestination", getUntakenTierDestinationEncoder()],
       ["dynamicBonusballEnabled", getBooleanEncoder()],
@@ -188,6 +191,7 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
     ["lpPoolCap", getU64Decoder()],
     ["tierPremiumWeightBps", getArrayDecoder(getU16Decoder(), { size: 12 })],
     ["tierMinPayoutPerWinner", getArrayDecoder(getU64Decoder(), { size: 12 })],
+    ["tierIsWinning", getArrayDecoder(getBooleanDecoder(), { size: 12 })],
     ["premiumMinAllocationBps", getU16Decoder()],
     ["untakenTierDestination", getUntakenTierDestinationDecoder()],
     ["dynamicBonusballEnabled", getBooleanDecoder()],
@@ -255,5 +259,5 @@ export async function fetchAllMaybeConfig(
 }
 
 export function getConfigSize(): number {
-  return 264;
+  return 276;
 }

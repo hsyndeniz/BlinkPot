@@ -65,10 +65,7 @@ export type Ticket = {
   pricePaid: bigint;
   normals: ReadonlyUint8Array;
   bonusball: number;
-  /** True once the ticket has been processed by `tally_round` (tier set). */
-  tallied: boolean;
   claimed: boolean;
-  tier: number;
   bump: number;
 };
 
@@ -85,10 +82,7 @@ export type TicketArgs = {
   pricePaid: number | bigint;
   normals: ReadonlyUint8Array;
   bonusball: number;
-  /** True once the ticket has been processed by `tally_round` (tier set). */
-  tallied: boolean;
   claimed: boolean;
-  tier: number;
   bump: number;
 };
 
@@ -109,9 +103,7 @@ export function getTicketEncoder(): FixedSizeEncoder<TicketArgs> {
       ["pricePaid", getU64Encoder()],
       ["normals", fixEncoderSize(getBytesEncoder(), 5)],
       ["bonusball", getU8Encoder()],
-      ["tallied", getBooleanEncoder()],
       ["claimed", getBooleanEncoder()],
-      ["tier", getU8Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: TICKET_DISCRIMINATOR }),
@@ -134,9 +126,7 @@ export function getTicketDecoder(): FixedSizeDecoder<Ticket> {
     ["pricePaid", getU64Decoder()],
     ["normals", fixDecoderSize(getBytesDecoder(), 5)],
     ["bonusball", getU8Decoder()],
-    ["tallied", getBooleanDecoder()],
     ["claimed", getBooleanDecoder()],
-    ["tier", getU8Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -200,5 +190,5 @@ export async function fetchAllMaybeTicket(
 }
 
 export function getTicketSize(): number {
-  return 180;
+  return 178;
 }

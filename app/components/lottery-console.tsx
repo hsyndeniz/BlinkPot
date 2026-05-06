@@ -61,7 +61,6 @@ import {
 } from "../lib/lottery/addresses";
 import {
   useBuyerEntry,
-  useCompoundState,
   useConfig,
   useCurrentRound,
   useLpPosition,
@@ -70,7 +69,6 @@ import {
   useRound,
   useRounds,
   useSubscription,
-  useTicketScan,
   useTickets,
 } from "../lib/lottery/accounts";
 import { RoundSelect } from "./round-select";
@@ -85,12 +83,14 @@ import {
 } from "../lib/lottery/tokens";
 import {
   buildBuyTicketsInstruction,
-  buildCompoundWinningsInstruction,
   buildProcessSubscriptionInstruction,
-  buildTallyRoundInstruction,
 } from "../lib/lottery/builders";
 import { useSendLotteryTransaction } from "../lib/lottery/transactions";
-import { countTicketMatches, isWinningTicket } from "../lib/lottery/tally";
+import {
+  countTicketMatches,
+  isWinningTicket,
+  tierForMatch,
+} from "../lib/lottery/tally";
 import {
   buildCreateRandomnessInstruction,
   buildSwitchboardCommitInstruction,
@@ -98,8 +98,7 @@ import {
 } from "../lib/lottery/randomness";
 
 const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
-const TICKET_BATCH_LIMIT = 20;
-const TALLY_PAGE_SIZE = 30;
+const TICKET_BATCH_LIMIT = 30;
 
 type TabId =
   | "overview"
@@ -125,6 +124,7 @@ type ConfigForm = {
   referralWinShareSecondBps: string; // 2%
   tierMinPayoutPerWinner: string; // CSV of 12 values (USDC)
   tierPremiumWeightBps: string; // CSV of 12 values (sum to 10000)
+  tierIsWinning: string; // CSV of 12 boolean values (0 or 1)
   premiumMinAllocationBps: string; // 20% floor e.g. 2000
   dynamicBonusballEnabled: boolean;
   bonusballBase: string; // e.g. 5
@@ -153,6 +153,7 @@ const defaultConfigForm: ConfigForm = {
   // Small payout tiers (Tier 3 1N+B): $2
   tierMinPayoutPerWinner: "0,1,0,2,1,2,5,10,25,50,100,0",
   tierPremiumWeightBps: "0,0,0,1200,0,1200,1200,600,600,600,600,4000",
+  tierIsWinning: "0,1,0,1,1,1,1,1,1,1,1,1", // Megapot: tiers 0 and 2 are non-winning
   premiumMinAllocationBps: "2000", // 20%
   dynamicBonusballEnabled: true,
   bonusballBase: "5",
@@ -214,16 +215,11 @@ function ticketPayoutEstimate(
   round: Round | undefined,
   ticket: Ticket
 ): bigint {
-  if (
-    !round ||
-    ticket.tier === 0 ||
-    ticket.tier >= round.tierPoolAmounts.length
-  ) {
-    return 0n;
-  }
-  const winnerCount = BigInt(round.tierWinnerCounts[ticket.tier] ?? 0);
-  if (winnerCount === 0n) return 0n;
-  return round.tierPoolAmounts[ticket.tier] / winnerCount;
+  if (!round) return 0n;
+  const { matches, hasBonusball } = countTicketMatches(round, ticket);
+  const tier = tierForMatch(matches, hasBonusball);
+  if (!round.tierIsWinning[tier]) return 0n;
+  return round.payoutPerWinner[tier] ?? 0n;
 }
 
 function usdcAmountToLpShares(
@@ -287,6 +283,9 @@ function configToForm(rawConfig: Config, decimals: number): ConfigForm {
     tierPremiumWeightBps:
       config.tierPremiumWeightBps?.join(",") ??
       "0,0,0,1200,0,1200,1200,600,600,600,600,4000",
+    tierIsWinning:
+      config.tierIsWinning?.map((v) => (v ? "1" : "0")).join(",") ??
+      "0,1,0,1,1,1,1,1,1,1,1,1",
     premiumMinAllocationBps:
       config.premiumMinAllocationBps?.toString() ?? "2000",
     dynamicBonusballEnabled: config.dynamicBonusballEnabled ?? true,
@@ -337,6 +336,22 @@ function parseTierPremiumWeights(value: string): number[] {
   return parsed;
 }
 
+function parseTierIsWinning(value: string): boolean[] {
+  const parsed = value
+    .split(",")
+    .map((item) => {
+      const trimmed = item.trim();
+      if (trimmed === "0" || trimmed.toLowerCase() === "false") return false;
+      if (trimmed === "1" || trimmed.toLowerCase() === "true") return true;
+      return null;
+    })
+    .filter((item) => item !== null) as boolean[];
+  if (parsed.length !== 12) {
+    throw new Error("Tier is-winning flags must contain exactly 12 values.");
+  }
+  return parsed;
+}
+
 function formToConfigParams(
   form: ConfigForm,
   decimals: number
@@ -375,6 +390,7 @@ function formToConfigParams(
       decimals
     ),
     tierPremiumWeightBps: parseTierPremiumWeights(form.tierPremiumWeightBps),
+    tierIsWinning: parseTierIsWinning(form.tierIsWinning),
     premiumMinAllocationBps,
     dynamicBonusballEnabled: form.dynamicBonusballEnabled,
     bonusballBase: Number(form.bonusballBase),
@@ -827,8 +843,42 @@ export function LotteryConsole() {
   const subscription = useSubscription(walletAddress);
   const buyerEntry = useBuyerEntry(roundId, walletAddress);
   const tickets = useTickets(roundId, walletAddress);
-  const scannedTickets = useTicketScan(roundId);
-  const compoundState = useCompoundState(walletAddress);
+
+  // DEBUG: Log ticket data
+  useEffect(() => {
+    console.log("=== TICKET DEBUG ===");
+    console.log("Wallet Address:", walletAddress);
+    console.log("Selected Round ID:", selectedRoundId);
+    console.log("Current Round ID:", currentRound.round?.roundId?.toString());
+    console.log("Active Round ID:", roundId?.toString());
+    console.log("Buyer Entry Address:", buyerEntry.address);
+    console.log("Buyer Entry Exists:", buyerEntry.exists);
+    console.log("Buyer Entry Data:", buyerEntry.buyerEntry);
+    console.log(
+      "Buyer Entry Ticket Count:",
+      buyerEntry.buyerEntry?.ticketCount?.toString()
+    );
+    console.log("Buyer Entry Loading:", buyerEntry.isLoading);
+    console.log("Buyer Entry Validating:", buyerEntry.isValidating);
+    console.log("Tickets Data:", tickets);
+    console.log("Tickets Array Length:", tickets.tickets?.length);
+    console.log("Tickets Addresses Length:", tickets.addresses?.length);
+    console.log(
+      "Available Rounds:",
+      rounds.rounds?.map((r) => r.data?.roundId?.toString())
+    );
+    console.log("===================");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    walletAddress,
+    selectedRoundId,
+    roundId,
+    buyerEntry.exists,
+    buyerEntry.buyerEntry?.ticketCount,
+    buyerEntry.isLoading,
+    tickets.tickets?.length,
+    rounds.rounds?.length,
+  ]);
   const mintInfo = useMint(config?.usdcMint);
   const userUsdc = useTokenAccount(walletAddress, config?.usdcMint);
   const programTokens = useProgramTokenAddresses(
@@ -858,6 +908,9 @@ export function LotteryConsole() {
     [setupMintInput]
   );
   const setupMint = useMint(setupMintAddress);
+  const [ticketFilter, setTicketFilter] = useState<
+    "all" | "winning" | "losing"
+  >("all");
   const [normalInput, setNormalInput] = useState("1,2,3,4,5");
   const [bonusInput, setBonusInput] = useState("1");
   const [batchCountInput, setBatchCountInput] = useState("1");
@@ -872,12 +925,6 @@ export function LotteryConsole() {
   const [startDurationInput, setStartDurationInput] = useState("86400");
   const [startBonusMaxInput, setStartBonusMaxInput] = useState("15");
   const [startGuaranteedPoolInput, setStartGuaranteedPoolInput] = useState("");
-  const [tallyPageIndex, setTallyPageIndex] = useState(0);
-  const [selectedWinningTicketAddresses, setSelectedWinningTicketAddresses] =
-    useState<Address[]>([]);
-  const [finalizeTallyRound, setFinalizeTallyRound] = useState(true);
-  const [compoundSourceRoundInput, setCompoundSourceRoundInput] = useState("");
-  const [compoundCountInput, setCompoundCountInput] = useState("1");
   const [randomnessDraft, setRandomnessDraft] = useState<{
     key?: string;
     value: string;
@@ -947,45 +994,6 @@ export function LotteryConsole() {
     !!roundAddress &&
     round.state === RoundState.Drawing &&
     !isDefaultAddress(round.randomnessAccount);
-  const winningTicketRows = round
-    ? scannedTickets.tickets
-        .map((ticket) => {
-          const outcome = isWinningTicket(round, ticket.data);
-          return outcome.winning && !ticket.data.tallied
-            ? { ...ticket, ...outcome }
-            : null;
-        })
-        .filter(
-          (
-            ticket
-          ): ticket is (typeof scannedTickets.tickets)[number] & {
-            matches: number;
-            hasBonusball: boolean;
-            tier: number;
-            winning: true;
-          } => !!ticket
-        )
-    : [];
-  const tallyPageCount = Math.max(
-    1,
-    Math.ceil(winningTicketRows.length / TALLY_PAGE_SIZE)
-  );
-  const tallyPage = Math.min(tallyPageIndex, tallyPageCount - 1);
-  const tallyPageTickets = winningTicketRows.slice(
-    tallyPage * TALLY_PAGE_SIZE,
-    tallyPage * TALLY_PAGE_SIZE + TALLY_PAGE_SIZE
-  );
-  const selectedWinningTickets = winningTicketRows.filter((ticket) =>
-    selectedWinningTicketAddresses.includes(ticket.address)
-  );
-  const visibleWinningTicketAddresses = tallyPageTickets.map(
-    (ticket) => ticket.address
-  );
-  const allVisibleWinningTicketsSelected =
-    tallyPageTickets.length > 0 &&
-    tallyPageTickets.every((ticket) =>
-      selectedWinningTicketAddresses.includes(ticket.address)
-    );
 
   const runAction = async (label: string, action: () => Promise<void>) => {
     setBusyAction(label);
@@ -1189,88 +1197,6 @@ export function LotteryConsole() {
       });
     });
 
-  const handleCompoundWinnings = () =>
-    runAction("Compound winnings", async () => {
-      const walletSigner = requireSigner();
-      const cfg = requireConfig();
-      const activeRound = requireRound();
-      if (activeRound.round.state !== RoundState.Open) {
-        throw new Error("Compounding requires an open round to buy into.");
-      }
-      const sourceIdRaw = compoundSourceRoundInput.trim();
-      if (!sourceIdRaw) {
-        throw new Error(
-          "Enter the source round id whose winnings to compound."
-        );
-      }
-      const sourceRoundId = BigInt(sourceIdRaw);
-      const sourceRoundAddress = pdaAddress(await findRoundPda(sourceRoundId));
-
-      // Find the wallet's winning, unclaimed, tallied tickets in the source round.
-      const winning = scannedTickets.tickets.filter(
-        (t) =>
-          t.data.owner === walletSigner.address &&
-          t.data.roundId === sourceRoundId &&
-          t.data.tallied &&
-          !t.data.claimed &&
-          t.data.tier > 0
-      );
-      if (winning.length === 0) {
-        throw new Error("No unclaimed winning tickets found in that round.");
-      }
-
-      const requested = Math.max(1, Number(compoundCountInput || "1"));
-      const ticketCount = Math.min(requested, 5);
-      const picks = Array.from({ length: ticketCount }, () =>
-        quickPick(
-          activeRound.round.normalBallMax,
-          activeRound.round.bonusballMax
-        )
-      );
-
-      const { referrer, referrerAccount, parentReferrerAccount } =
-        await validateOptionalReferrer(referrerInput);
-
-      const { createAta } = await buildWalletAta(walletSigner, cfg.usdcMint);
-      const firstTicketIndex = buyerEntry.buyerEntry?.ticketCount ?? 0n;
-
-      const built = await buildCompoundWinningsInstruction({
-        buyer: walletSigner,
-        round: activeRound.address,
-        roundId: activeRound.round.roundId,
-        sourceRound: sourceRoundAddress,
-        usdcMint: cfg.usdcMint,
-        picks,
-        firstTicketIndex,
-        winningTicketAddresses: winning.map((t) => t.address),
-        referrer,
-        referrerAccount,
-        parentReferrerAccount,
-      });
-
-      const compoundedTotal = winning.reduce((acc, t) => {
-        const tierIndex = t.data.tier;
-        // Approximate gross display from source round; on-chain divides pool/count.
-        return acc + 0n * BigInt(tierIndex);
-      }, 0n);
-
-      await send({
-        action: "Compound winnings",
-        instructions: [createAta, built.instruction],
-        expectedStateChange: `${winning.length} winning ticket(s) claimed and re-invested into up to ${ticketCount} new ticket(s).`,
-        usdcAmount:
-          compoundedTotal > 0n
-            ? formatTokenAmount(compoundedTotal, decimals)
-            : undefined,
-        touchedAccounts: [
-          { label: "source round", address: sourceRoundAddress },
-          { label: "round", address: activeRound.address },
-          { label: "compound state", address: built.compoundState },
-          { label: "buyer entry", address: built.buyerEntry },
-        ],
-      });
-    });
-
   const handleEmergencyRefund = (ticket: { address: Address; data: Ticket }) =>
     runAction("Emergency refund", async () => {
       const walletSigner = requireSigner();
@@ -1438,12 +1364,16 @@ export function LotteryConsole() {
         usdcMint: cfg.usdcMint,
         ownerTokenAccount: ata,
       });
+
       await send({
         action: "Emergency LP withdraw",
         instructions: [createAta, instruction],
         expectedStateChange:
-          "LP principal is withdrawn through the emergency path.",
-        touchedAccounts: [{ label: "owner ATA", address: ata }],
+          "All LP shares are burned and USDC is returned to owner.",
+        touchedAccounts: [
+          { label: "LP vault", address: lpVault.address! },
+          { label: "owner ATA", address: ata },
+        ],
       });
     });
 
@@ -1774,10 +1704,12 @@ export function LotteryConsole() {
     runAction("Archive round", async () => {
       const walletSigner = requireSigner();
       const activeRound = requireRound();
+      const cfg = requireConfig();
       if (!isAdmin) throw new Error("Only config.admin can archive rounds.");
       const instruction = await getArchiveRoundInstructionAsync({
         admin: walletSigner,
         round: activeRound.address,
+        usdcMint: cfg.usdcMint,
       });
       await send({
         action: "Archive round",
@@ -1919,7 +1851,7 @@ export function LotteryConsole() {
         action: "Reveal draw",
         instructions: [switchboardIx, lotteryIx],
         expectedStateChange:
-          "Winning balls are recorded and round enters settled flow.",
+          "Winning balls are recorded and round enters Claimable state.",
         touchedAccounts: [
           { label: "round", address: activeRound.address },
           { label: "randomness", address: randomnessAccount },
@@ -1927,86 +1859,8 @@ export function LotteryConsole() {
       });
     });
 
-  const handleRefreshWinningTickets = () =>
-    runAction("Scan winning tickets", async () => {
-      await scannedTickets.mutate();
-      setTallyPageIndex(0);
-    });
-
-  const handleToggleWinningTicket = (address: Address) => {
-    setSelectedWinningTicketAddresses((current) =>
-      current.includes(address)
-        ? current.filter((entry) => entry !== address)
-        : [...current, address]
-    );
-  };
-
-  const handleToggleVisibleWinningTickets = () => {
-    if (allVisibleWinningTicketsSelected) {
-      setSelectedWinningTicketAddresses((current) =>
-        current.filter(
-          (address) => !visibleWinningTicketAddresses.includes(address)
-        )
-      );
-      return;
-    }
-    setSelectedWinningTicketAddresses((current) =>
-      Array.from(new Set([...current, ...visibleWinningTicketAddresses]))
-    );
-  };
-
-  const handleClearWinningTicketSelection = () => {
-    setSelectedWinningTicketAddresses([]);
-  };
-
-  const handleTallyWinningTickets = () =>
-    runAction("Tally round", async () => {
-      const walletSigner = requireSigner();
-      const cfg = requireConfig();
-      const activeRound = requireRound();
-      const noWinnersDiscovered = winningTicketRows.length === 0;
-      const selected = winningTicketRows.filter((ticket) =>
-        selectedWinningTicketAddresses.includes(ticket.address)
-      );
-      if (!selected.length && !noWinnersDiscovered) {
-        throw new Error("Select at least one winning ticket to tally.");
-      }
-      if (noWinnersDiscovered && !finalizeTallyRound) {
-        throw new Error(
-          "No winning tickets found. Enable finalize to close the round as Claimable."
-        );
-      }
-      if (finalizeTallyRound && selected.length !== winningTicketRows.length) {
-        throw new Error(
-          "Finalize can only be enabled when all remaining winning tickets are selected."
-        );
-      }
-      const instruction = await buildTallyRoundInstruction({
-        trigger: walletSigner,
-        round: activeRound.address,
-        usdcMint: cfg.usdcMint,
-        winningTicketAddresses: selected.map((ticket) => ticket.address),
-        finalize: finalizeTallyRound,
-      });
-      await send({
-        action: "Tally round",
-        instructions: [instruction],
-        expectedStateChange: finalizeTallyRound
-          ? noWinnersDiscovered
-            ? "No winning tickets found; round is finalized as Claimable."
-            : `${selected.length} ticket(s) are tallied and the round is finalized.`
-          : `${selected.length} ticket(s) are tallied in the current batch.`,
-        touchedAccounts: [
-          { label: "round", address: activeRound.address },
-          ...selected.map((ticket, index) => ({
-            label: `winning ticket ${index + 1}`,
-            address: ticket.address,
-          })),
-        ],
-      });
-      setSelectedWinningTicketAddresses([]);
-      await scannedTickets.mutate();
-    });
+  // Tally was removed — reveal_draw now precomputes payouts and the round
+  // transitions straight to Claimable. Winners just call claim_winnings.
 
   const ticketRows = tickets.tickets.flatMap((account, index) => {
     const ticketAddress = tickets.addresses[index];
@@ -2014,10 +1868,28 @@ export function LotteryConsole() {
       ? [{ address: ticketAddress, data: account.data }]
       : [];
   });
-  console.log("All tickets for the round:", ticketRows);
-  const talliedTicketCount = ticketRows.filter(
-    (ticket) => ticket.data.tallied
-  ).length;
+
+  // DEBUG: Log ticket rows
+  useEffect(() => {
+    console.log("🎟️ Ticket Rows:", {
+      totalTickets: tickets.tickets?.length,
+      totalAddresses: tickets.addresses?.length,
+      ticketRowsLength: ticketRows.length,
+      existingTickets: tickets.tickets?.filter((t) => t.exists).length,
+      ticketRows: ticketRows.map((t) => ({
+        address: t.address,
+        normals: Array.from(t.data.normals),
+        bonusball: t.data.bonusball,
+        claimed: t.data.claimed,
+      })),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticketRows.length, tickets.tickets?.length]);
+
+  const winningTicketCount = round
+    ? ticketRows.filter((ticket) => isWinningTicket(round, ticket.data).winning)
+        .length
+    : 0;
 
   const overviewMetrics = [
     {
@@ -2031,24 +1903,19 @@ export function LotteryConsole() {
       subvalue: "USDC",
     },
     {
-      label: "Ticket pool",
-      value: formatTokenAmount(round?.ticketPrizePool, decimals),
-      subvalue: "USDC",
-    },
-    {
       label: "LP guarantee",
       value: formatTokenAmount(round?.lpGuaranteeReserved, decimals),
       subvalue: "reserved",
     },
     {
-      label: "LP loss",
-      value: formatTokenAmount(round?.lpLossReserved, decimals),
-      subvalue: "reserved",
+      label: "Rolled to next",
+      value: formatTokenAmount(round?.rolledToNextRound, decimals),
+      subvalue: "post-archive",
     },
     {
       label: "Tickets",
       value: round?.ticketCount.toString() ?? "0",
-      subvalue: `${talliedTicketCount} tallied`,
+      subvalue: `${winningTicketCount} winners`,
     },
   ];
 
@@ -2066,7 +1933,6 @@ export function LotteryConsole() {
     { label: "Subscription", address: subscription.address },
     { label: "Sub escrow", address: programTokens.data?.subEscrow },
     { label: "Buyer entry", address: buyerEntry.address },
-    { label: "Compound state", address: compoundState.address },
     { label: "User USDC ATA", address: userUsdc.ata },
     {
       label: "Switchboard randomness",
@@ -2195,15 +2061,15 @@ export function LotteryConsole() {
                           </span>
                         </div>
                         <div>
-                          ticketPrizePool:{" "}
-                          <span className="font-mono">
-                            {round?.ticketPrizePool?.toString() ?? "-"}
-                          </span>
-                        </div>
-                        <div>
                           seedPrizePool:{" "}
                           <span className="font-mono">
                             {round?.seedPrizePool?.toString() ?? "-"}
+                          </span>
+                        </div>
+                        <div>
+                          lpGuaranteeReserved:{" "}
+                          <span className="font-mono">
+                            {round?.lpGuaranteeReserved?.toString() ?? "-"}
                           </span>
                         </div>
                         <div>
@@ -2227,16 +2093,9 @@ export function LotteryConsole() {
                           </span>
                         </div>
                         <div>
-                          sum pools:{" "}
+                          prize pool:{" "}
                           <span className="font-mono">
-                            {round
-                              ? (
-                                  round.ticketPrizePool +
-                                  round.seedPrizePool +
-                                  round.lpGuaranteeReserved +
-                                  round.lpLossReserved
-                                ).toString()
-                              : "-"}
+                            {round ? round.prizePool.toString() : "-"}
                           </span>
                         </div>
                       </div>
@@ -2246,8 +2105,8 @@ export function LotteryConsole() {
                     {[
                       RoundState.Open,
                       RoundState.Drawing,
-                      RoundState.Settled,
                       RoundState.Claimable,
+                      RoundState.Archived,
                     ].map((state) => (
                       <div
                         key={state}
@@ -2327,21 +2186,21 @@ export function LotteryConsole() {
                         value={`${round?.claimedCount ?? 0n} / ${round?.ticketCount ?? 0n}`}
                       />
                       <Metric
-                        label="Tally"
-                        value={round?.tallyDone ? "Done" : "Pending"}
+                        label="Mins applied"
+                        value={round?.usedMinimumPayouts ? "Yes" : "No"}
                       />
                     </div>
                   </Panel>
                 </div>
 
-                <Panel title="Tier Pools">
+                <Panel title="Tier Payouts">
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[720px] text-left text-sm">
                       <thead className="text-xs text-muted">
                         <tr>
                           <th className="py-2">Tier</th>
-                          <th>Winners</th>
-                          <th>Pool</th>
+                          <th>Winning?</th>
+                          <th>Payout / winner</th>
                           <th>Paid count</th>
                           <th>Paid amount</th>
                         </tr>
@@ -2350,10 +2209,10 @@ export function LotteryConsole() {
                         {Array.from({ length: 12 }, (_, tier) => (
                           <tr key={tier} className="border-t border-border-low">
                             <td className="py-2 font-mono">{tier}</td>
-                            <td>{round?.tierWinnerCounts[tier] ?? 0}</td>
+                            <td>{round?.tierIsWinning[tier] ? "yes" : "no"}</td>
                             <td>
                               {formatTokenAmount(
-                                round?.tierPoolAmounts[tier],
+                                round?.payoutPerWinner[tier],
                                 decimals
                               )}
                             </td>
@@ -2437,136 +2296,301 @@ export function LotteryConsole() {
                           <span>Buyer entry</span>
                           <AddressLink address={buyerEntry.address} />
                         </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Buyer entry exists</span>
+                          <span className="font-mono">
+                            {buyerEntry.exists ? "Yes" : "No"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Ticket count</span>
+                          <span className="font-mono">
+                            {buyerEntry.buyerEntry?.ticketCount.toString() ??
+                              "0"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Tickets loaded</span>
+                          <span className="font-mono">
+                            {tickets.tickets.length} / {ticketRows.length}{" "}
+                            displayed
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </Panel>
 
                   <Panel title="My Tickets">
                     <div className="space-y-3">
-                      {ticketRows.length === 0 && (
-                        <p className="text-sm text-muted">
-                          No tickets found for this round.
-                        </p>
+                      {roundId && (
+                        <div className="rounded-lg border border-border-low bg-background/60 p-2 text-xs text-muted">
+                          <div className="flex items-center justify-between">
+                            <span>
+                              Showing tickets for Round #{roundId.toString()}
+                              {selectedRoundId &&
+                                selectedRoundId !==
+                                  currentRound.round?.roundId?.toString() && (
+                                  <span className="ml-2 text-amber-600 dark:text-amber-400">
+                                    (Historical)
+                                  </span>
+                                )}
+                            </span>
+                            {buyerEntry.exists && (
+                              <span className="font-mono">
+                                {buyerEntry.buyerEntry?.ticketCount.toString() ??
+                                  "0"}{" "}
+                                ticket(s) purchased
+                              </span>
+                            )}
+                          </div>
+                          {!buyerEntry.exists && !buyerEntry.isLoading && (
+                            <div className="mt-1 text-amber-600 dark:text-amber-400">
+                              No tickets purchased for this round.
+                              {selectedRoundId &&
+                                currentRound.round?.roundId && (
+                                  <button
+                                    onClick={() =>
+                                      setSelectedRoundId(undefined)
+                                    }
+                                    className="ml-2 underline hover:text-amber-700 dark:hover:text-amber-300"
+                                  >
+                                    View current round (#
+                                    {currentRound.round.roundId.toString()})
+                                  </button>
+                                )}
+                            </div>
+                          )}
+                          {buyerEntry.isLoading && (
+                            <div className="mt-1 text-blue-600 dark:text-blue-400">
+                              Loading buyer entry data...
+                            </div>
+                          )}
+                        </div>
                       )}
-                      {ticketRows.map((ticket) => {
-                        const outcome = round
-                          ? countTicketMatches(round, ticket.data)
-                          : { matches: 0, hasBonusball: false };
-                        const matchedNormals = round
-                          ? ticket.data.normals.filter((value) =>
-                              Array.from(round.winningNormals).includes(value)
-                            )
-                          : [];
-
-                        return (
-                          <div
-                            key={ticket.address}
-                            className="grid gap-3 rounded-lg border border-border-low bg-background/60 p-3 md:grid-cols-[1fr_auto]"
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-muted">Filter:</span>
+                        <ActionButton
+                          variant={
+                            ticketFilter === "all" ? "primary" : undefined
+                          }
+                          onClick={() => setTicketFilter("all")}
+                        >
+                          All ({ticketRows.length})
+                        </ActionButton>
+                        <ActionButton
+                          variant={
+                            ticketFilter === "winning" ? "primary" : undefined
+                          }
+                          onClick={() => setTicketFilter("winning")}
+                        >
+                          Winners (
+                          {
+                            ticketRows.filter(
+                              (t) =>
+                                round && isWinningTicket(round, t.data).winning
+                            ).length
+                          }
+                          )
+                        </ActionButton>
+                        <ActionButton
+                          variant={
+                            ticketFilter === "losing" ? "primary" : undefined
+                          }
+                          onClick={() => setTicketFilter("losing")}
+                        >
+                          Non-winners (
+                          {
+                            ticketRows.filter(
+                              (t) =>
+                                round && !isWinningTicket(round, t.data).winning
+                            ).length
+                          }
+                          )
+                        </ActionButton>
+                        <div className="ml-auto">
+                          <ActionButton
+                            onClick={() => {
+                              tickets.mutate();
+                              buyerEntry.mutate();
+                              toast.info("Refreshing ticket data...");
+                            }}
+                            disabled={!roundId || !walletAddress}
                           >
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-mono text-sm">
-                                  #{ticket.data.ticketIndex.toString()}
-                                </span>
-                                <StatusBadge
-                                  tone={ticket.data.tallied ? "good" : "warn"}
-                                >
-                                  {ticket.data.tallied
-                                    ? "Tallied"
-                                    : "Pending tally"}
-                                </StatusBadge>
-                                <StatusBadge
-                                  tone={
-                                    ticket.data.claimed
-                                      ? "good"
-                                      : ticket.data.tallied &&
-                                          ticket.data.tier > 0 &&
-                                          ticketPayoutEstimate(
-                                            round,
-                                            ticket.data
-                                          ) > 0n
+                            🔄 Refresh
+                          </ActionButton>
+                        </div>
+                      </div>
+                      {ticketRows.length === 0 && buyerEntry.exists && (
+                        <div className="rounded-lg border border-border-low bg-blue-50 dark:bg-blue-950/20 p-3">
+                          <p className="text-sm text-blue-700 dark:text-blue-300">
+                            Loading tickets... (
+                            {buyerEntry.buyerEntry?.ticketCount.toString() ??
+                              "0"}{" "}
+                            expected)
+                          </p>
+                          <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
+                            If tickets don't appear after a few seconds, try
+                            refreshing the page. Large batches may take longer
+                            to index.
+                          </p>
+                        </div>
+                      )}
+                      {ticketRows.length === 0 &&
+                        !buyerEntry.exists &&
+                        (buyerEntry.isLoading || buyerEntry.isValidating) && (
+                          <p className="text-sm text-muted">
+                            Loading buyer entry data...
+                          </p>
+                        )}
+                      {ticketRows.length === 0 &&
+                        !buyerEntry.exists &&
+                        !buyerEntry.isLoading &&
+                        !buyerEntry.isValidating && (
+                          <div className="rounded-lg border border-border-low bg-background/60 p-3">
+                            <p className="text-sm text-muted">
+                              No tickets found for this round.
+                            </p>
+                            {selectedRoundId && currentRound.round?.roundId && (
+                              <button
+                                onClick={() => setSelectedRoundId(undefined)}
+                                className="mt-2 text-xs text-primary underline hover:text-primary/80"
+                              >
+                                Switch to current round (#
+                                {currentRound.round.roundId.toString()})
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      {ticketRows
+                        .filter((ticket) => {
+                          if (ticketFilter === "all") return true;
+                          if (!round) return false;
+                          const outcome = isWinningTicket(round, ticket.data);
+                          return ticketFilter === "winning"
+                            ? outcome.winning
+                            : !outcome.winning;
+                        })
+                        .map((ticket) => {
+                          const outcome = round
+                            ? isWinningTicket(round, ticket.data)
+                            : {
+                                matches: 0,
+                                hasBonusball: false,
+                                tier: 0,
+                                winning: false,
+                              };
+                          const matchedNormals = round
+                            ? ticket.data.normals.filter((value) =>
+                                Array.from(round.winningNormals).includes(value)
+                              )
+                            : [];
+
+                          return (
+                            <div
+                              key={ticket.address}
+                              className="grid gap-3 rounded-lg border border-border-low bg-background/60 p-3 md:grid-cols-[1fr_auto]"
+                            >
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-sm">
+                                    #{ticket.data.ticketIndex.toString()}
+                                  </span>
+                                  <StatusBadge
+                                    tone={
+                                      ticket.data.claimed
                                         ? "good"
-                                        : ticket.data.tallied &&
-                                            ticket.data.tier > 0
-                                          ? "warn"
+                                        : outcome.winning
+                                          ? "good"
                                           : "neutral"
+                                    }
+                                  >
+                                    {ticket.data.claimed
+                                      ? "Claimed"
+                                      : outcome.winning
+                                        ? `Tier ${outcome.tier} — winner 💰`
+                                        : `Tier ${outcome.tier}`}
+                                  </StatusBadge>
+                                </div>
+                                <p className="mt-2 text-sm">
+                                  {ballsToString(ticket.data.normals)} +{" "}
+                                  {ticket.data.bonusball}
+                                </p>
+                                <p className="mt-1 text-xs text-muted">
+                                  Matching normals:{" "}
+                                  {round ? ballsToString(matchedNormals) : "-"}
+                                  {" · "}
+                                  Bonusball:{" "}
+                                  {round
+                                    ? outcome.hasBonusball
+                                      ? "match"
+                                      : "no match"
+                                    : "-"}
+                                  {" · "}
+                                  Matches: {round ? outcome.matches : "-"}
+                                </p>
+                                <p className="mt-1 text-xs text-muted">
+                                  Paid{" "}
+                                  {formatTokenAmount(
+                                    ticket.data.pricePaid,
+                                    decimals
+                                  )}{" "}
+                                  USDC, payout estimate{" "}
+                                  {formatTokenAmount(
+                                    ticketPayoutEstimate(round, ticket.data),
+                                    decimals
+                                  )}
+                                </p>
+                                <p className="mt-1">
+                                  <AddressLink address={ticket.address} />
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-start gap-2 md:justify-end">
+                                <ActionButton
+                                  onClick={() => handleClaimTicket(ticket)}
+                                  disabled={
+                                    !round ||
+                                    (round.state !== RoundState.Claimable &&
+                                      round.state !== RoundState.Archived) ||
+                                    ticket.data.claimed ||
+                                    !outcome.winning ||
+                                    ticketPayoutEstimate(round, ticket.data) ===
+                                      0n ||
+                                    isSending
                                   }
                                 >
-                                  {ticket.data.claimed
-                                    ? "Claimed"
-                                    : ticket.data.tallied &&
-                                        ticket.data.tier > 0
-                                      ? ticketPayoutEstimate(
-                                          round,
-                                          ticket.data
-                                        ) > 0n
-                                        ? `Tier ${ticket.data.tier} — winner 💰`
-                                        : `Tier ${ticket.data.tier} — no payout`
-                                      : `Tier ${ticket.data.tier}`}
-                                </StatusBadge>
+                                  Claim
+                                </ActionButton>
+                                <ActionButton
+                                  variant="danger"
+                                  onClick={() => handleEmergencyRefund(ticket)}
+                                  disabled={
+                                    !config?.emergencyMode &&
+                                    round?.state !== RoundState.Emergency
+                                  }
+                                >
+                                  Refund
+                                </ActionButton>
                               </div>
-                              <p className="mt-2 text-sm">
-                                {ballsToString(ticket.data.normals)} +{" "}
-                                {ticket.data.bonusball}
-                              </p>
-                              <p className="mt-1 text-xs text-muted">
-                                Matching normals:{" "}
-                                {round ? ballsToString(matchedNormals) : "-"}
-                                {" · "}
-                                Bonusball:{" "}
-                                {round
-                                  ? outcome.hasBonusball
-                                    ? "match"
-                                    : "no match"
-                                  : "-"}
-                                {" · "}
-                                Matches: {round ? outcome.matches : "-"}
-                              </p>
-                              <p className="mt-1 text-xs text-muted">
-                                Paid{" "}
-                                {formatTokenAmount(
-                                  ticket.data.pricePaid,
-                                  decimals
-                                )}{" "}
-                                USDC, payout estimate{" "}
-                                {formatTokenAmount(
-                                  ticketPayoutEstimate(round, ticket.data),
-                                  decimals
-                                )}
-                              </p>
-                              <p className="mt-1">
-                                <AddressLink address={ticket.address} />
-                              </p>
                             </div>
-                            <div className="flex flex-wrap items-start gap-2 md:justify-end">
-                              <ActionButton
-                                onClick={() => handleClaimTicket(ticket)}
-                                disabled={
-                                  !round ||
-                                  round.state !== RoundState.Claimable ||
-                                  ticket.data.claimed ||
-                                  ticket.data.tier === 0 ||
-                                  ticketPayoutEstimate(round, ticket.data) ===
-                                    0n ||
-                                  isSending
-                                }
-                              >
-                                Claim
-                              </ActionButton>
-                              <ActionButton
-                                variant="danger"
-                                onClick={() => handleEmergencyRefund(ticket)}
-                                disabled={
-                                  !config?.emergencyMode &&
-                                  round?.state !== RoundState.Emergency
-                                }
-                              >
-                                Refund
-                              </ActionButton>
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      {ticketRows.length > 0 &&
+                        ticketRows.filter((ticket) => {
+                          if (ticketFilter === "all") return true;
+                          if (!round) return false;
+                          const outcome = isWinningTicket(round, ticket.data);
+                          return ticketFilter === "winning"
+                            ? outcome.winning
+                            : !outcome.winning;
+                        }).length === 0 && (
+                          <p className="text-sm text-muted">
+                            No{" "}
+                            {ticketFilter === "winning"
+                              ? "winning"
+                              : "non-winning"}{" "}
+                            tickets found.
+                          </p>
+                        )}
                       {tickets.isTruncated && (
                         <p className="text-xs text-muted">
                           Ticket list is capped at 500 derived PDAs in the
@@ -2576,82 +2600,6 @@ export function LotteryConsole() {
                     </div>
                   </Panel>
                 </div>
-
-                <Panel title="Compound Winnings">
-                  <div className="grid gap-5 md:grid-cols-2">
-                    <div className="space-y-3">
-                      <p className="text-xs text-muted">
-                        Claim winning tickets from a past round and immediately
-                        re-invest them into the current open round. Sub-ticket
-                        remainders are saved and added to future compounds. Max
-                        5 new tickets per call.
-                      </p>
-                      <Field
-                        label="Source round ID"
-                        value={compoundSourceRoundInput}
-                        onChange={setCompoundSourceRoundInput}
-                        placeholder="Round ID whose winnings to compound"
-                        type="number"
-                      />
-                      <Field
-                        label="New tickets to buy (1–5)"
-                        value={compoundCountInput}
-                        onChange={setCompoundCountInput}
-                        type="number"
-                      />
-                      <p className="text-xs text-muted">
-                        Uses referrer from Ticket Picker. Winning, tallied,
-                        unclaimed tickets in the source round owned by your
-                        wallet will be selected automatically.
-                      </p>
-                      <ActionButton
-                        variant="primary"
-                        onClick={handleCompoundWinnings}
-                        disabled={
-                          !canBuy ||
-                          !compoundSourceRoundInput ||
-                          isSending ||
-                          busyAction === "Compound winnings"
-                        }
-                      >
-                        Compound winnings
-                      </ActionButton>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2 content-start">
-                      <Metric
-                        label="Pending balance"
-                        value={formatTokenAmount(
-                          compoundState.compoundState?.pendingUsdc,
-                          decimals
-                        )}
-                        subvalue="USDC — sub-ticket remainder"
-                      />
-                      <Metric
-                        label="Lifetime compounded"
-                        value={formatTokenAmount(
-                          compoundState.compoundState?.lifetimeCompounded,
-                          decimals
-                        )}
-                        subvalue="USDC"
-                      />
-                      <Metric
-                        label="Lifetime tickets"
-                        value={
-                          compoundState.compoundState?.lifetimeTickets.toString() ??
-                          "0"
-                        }
-                      />
-                      <Metric
-                        label="Compound state"
-                        value={<AddressLink address={compoundState.address} />}
-                        subvalue={
-                          compoundState.exists ? "initialized" : "not yet used"
-                        }
-                      />
-                    </div>
-                  </div>
-                </Panel>
               </div>
             )}
 
@@ -3079,152 +3027,6 @@ export function LotteryConsole() {
                     >
                       Start round
                     </ActionButton>
-                  </div>
-                </Panel>
-
-                <Panel title="Tally Round">
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <ActionButton
-                        variant="primary"
-                        onClick={handleRefreshWinningTickets}
-                        disabled={!round || isMainnet || isSending}
-                      >
-                        Scan RPC ({winningTicketRows.length})
-                      </ActionButton>
-                      <ActionButton
-                        onClick={handleToggleVisibleWinningTickets}
-                        disabled={!tallyPageTickets.length || isSending}
-                      >
-                        {allVisibleWinningTicketsSelected
-                          ? "Unselect page"
-                          : "Select page"}
-                      </ActionButton>
-                      <ActionButton
-                        onClick={handleClearWinningTicketSelection}
-                        disabled={
-                          !selectedWinningTicketAddresses.length || isSending
-                        }
-                      >
-                        Clear selection
-                      </ActionButton>
-                      <label className="flex items-center gap-2 text-xs font-medium text-muted">
-                        <input
-                          type="checkbox"
-                          checked={finalizeTallyRound}
-                          onChange={(event) =>
-                            setFinalizeTallyRound(event.target.checked)
-                          }
-                          className="h-4 w-4 rounded border-border-low bg-card"
-                        />
-                        Finalize pool on last batch
-                      </label>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-low bg-background/60 px-3 py-2 text-xs text-muted">
-                      <div>
-                        {winningTicketRows.length} winning ticket(s) discovered
-                        {round ? ` for round ${round.roundId.toString()}` : ""}
-                      </div>
-                      <div>
-                        Selected {selectedWinningTickets.length} of{" "}
-                        {winningTicketRows.length}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                      <ActionButton
-                        onClick={() =>
-                          setTallyPageIndex((current) =>
-                            Math.max(0, current - 1)
-                          )
-                        }
-                        disabled={tallyPage <= 0 || isSending}
-                      >
-                        Previous
-                      </ActionButton>
-                      <ActionButton
-                        onClick={() =>
-                          setTallyPageIndex((current) =>
-                            Math.min(tallyPageCount - 1, current + 1)
-                          )
-                        }
-                        disabled={tallyPage >= tallyPageCount - 1 || isSending}
-                      >
-                        Next
-                      </ActionButton>
-                      <span>
-                        Page {tallyPage + 1} of {tallyPageCount}
-                      </span>
-                      <ActionButton
-                        variant="primary"
-                        onClick={handleTallyWinningTickets}
-                        disabled={
-                          !round ||
-                          (!winningTicketRows.length
-                            ? !finalizeTallyRound
-                            : !selectedWinningTicketAddresses.length) ||
-                          isMainnet ||
-                          isSending
-                        }
-                      >
-                        Tally selected ({selectedWinningTickets.length})
-                      </ActionButton>
-                    </div>
-
-                    <div className="grid gap-2">
-                      {tallyPageTickets.length === 0 && (
-                        <p className="text-sm text-muted">
-                          Scan RPC to load winning tickets for this round.
-                        </p>
-                      )}
-                      {tallyPageTickets.map((ticket) => (
-                        <label
-                          key={ticket.address}
-                          className="grid gap-3 rounded-lg border border-border-low bg-background/60 p-3 md:grid-cols-[auto_1fr_auto] md:items-start"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedWinningTicketAddresses.includes(
-                              ticket.address
-                            )}
-                            onChange={() =>
-                              handleToggleWinningTicket(ticket.address)
-                            }
-                            className="mt-1 h-4 w-4 rounded border-border-low bg-card"
-                          />
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-sm">
-                                #{ticket.data.ticketIndex.toString()}
-                              </span>
-                              <StatusBadge tone="good">
-                                Tier {ticket.tier}
-                              </StatusBadge>
-                              <StatusBadge
-                                tone={ticket.hasBonusball ? "good" : "neutral"}
-                              >
-                                {ticket.hasBonusball ? "Bonusball" : "No bonus"}
-                              </StatusBadge>
-                            </div>
-                            <p className="mt-2 text-sm">
-                              {ballsToString(ticket.data.normals)} +{" "}
-                              {ticket.data.bonusball}
-                            </p>
-                            <p className="mt-1 text-xs text-muted">
-                              {ticket.matches} normal match
-                              {ticket.matches === 1 ? "" : "es"} ·
-                              {ticket.data.tallied
-                                ? "Already tallied"
-                                : "Pending tally"}
-                            </p>
-                          </div>
-                          <div className="pt-1 md:text-right">
-                            <AddressLink address={ticket.address} />
-                          </div>
-                        </label>
-                      ))}
-                    </div>
                   </div>
                 </Panel>
 

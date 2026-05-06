@@ -8,7 +8,6 @@ import {
   type ProgramDerivedAddress,
 } from "@solana/kit";
 import {
-  findCompoundStatePda,
   findConfigPda,
   findLpAuthorityPda,
   findLpPrincipalPda,
@@ -24,7 +23,6 @@ import {
 import { LOTTERY_PROGRAM_ADDRESS } from "../../generated/lottery/programs";
 
 export {
-  findCompoundStatePda,
   findConfigPda,
   findLpAuthorityPda,
   findLpPrincipalPda,

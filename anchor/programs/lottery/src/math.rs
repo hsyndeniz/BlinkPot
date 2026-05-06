@@ -5,7 +5,6 @@ use crate::constants::{
     NORMAL_BALL_MIN, SHARE_SCALE, TIER_COUNT,
 };
 use crate::errors::LotteryError;
-use crate::state::config::UntakenTierDestination;
 
 pub fn validate_pick(
     normals: &[u8; NORMAL_BALL_COUNT],
@@ -172,14 +171,17 @@ pub fn bps_amount(amount: u64, bps: u16) -> Result<u64> {
     Ok((numerator / BPS_DENOM as u128) as u64)
 }
 
-/// Validates that tier weight bps[0] = 0 and the sum of all bps = exactly 10_000.
-pub fn validate_tier_weight_bps(tier_premium_weight_bps: &[u16; TIER_COUNT]) -> Result<()> {
-    require!(
-        tier_premium_weight_bps[0] == 0,
-        LotteryError::InvalidTierWeightBps
-    );
+/// Validates that tier weight bps sum to exactly 10_000 and that any non-winning
+/// tier has zero weight (it can never receive premium).
+pub fn validate_tier_weight_bps(
+    tier_premium_weight_bps: &[u16; TIER_COUNT],
+    tier_is_winning: &[bool; TIER_COUNT],
+) -> Result<()> {
     let mut sum: u32 = 0;
-    for v in tier_premium_weight_bps.iter() {
+    for (t, v) in tier_premium_weight_bps.iter().enumerate() {
+        if !tier_is_winning[t] {
+            require!(*v == 0, LotteryError::InvalidTierWeightBps);
+        }
         sum = sum
             .checked_add(*v as u32)
             .ok_or(error!(LotteryError::MathOverflow))?;
@@ -204,66 +206,105 @@ pub fn compute_dynamic_bonusball(prize_pool_usdc: u64, base: u8, step: u64) -> u
     result as u8
 }
 
+/// Number of normal-ball combinations matching exactly `m` of the 5 winning normals
+/// out of `normal_max` total balls: C(5, m) * C(normal_max - 5, 5 - m).
+fn normal_match_combos(m: u8, normal_max: u8) -> u64 {
+    let total = normal_max as u64;
+    let winning = NORMAL_BALL_COUNT as u64;
+    let losing = total.saturating_sub(winning);
+    binomial(winning, m as u64).saturating_mul(binomial(losing, winning - m as u64))
+}
+
+/// Total number of distinct (5 normals, 1 bonus) tickets that fall into the tier
+/// `(matches=m, has_bonus)` given the current `normal_max` and `bonus_max`.
+pub fn tier_combos(m: u8, has_bonus: bool, normal_max: u8, bonus_max: u8) -> u64 {
+    let normal_combos = normal_match_combos(m, normal_max);
+    let bonus_factor = if has_bonus {
+        1
+    } else {
+        (bonus_max as u64).saturating_sub(1)
+    };
+    normal_combos.saturating_mul(bonus_factor)
+}
+
+/// Combinations indexed by tier id (`tier_for_match` ordering).
+pub fn tier_combos_table(normal_max: u8, bonus_max: u8) -> [u64; TIER_COUNT] {
+    let mut out = [0u64; TIER_COUNT];
+    for m in 0u8..=NORMAL_BALL_COUNT as u8 {
+        let no_bonus = tier_for_match(m, false) as usize;
+        let with_bonus = tier_for_match(m, true) as usize;
+        out[no_bonus] = tier_combos(m, false, normal_max, bonus_max);
+        out[with_bonus] = tier_combos(m, true, normal_max, bonus_max);
+    }
+    out
+}
+
+fn binomial(n: u64, k: u64) -> u64 {
+    if k > n {
+        return 0;
+    }
+    let k = k.min(n - k);
+    let mut result: u128 = 1;
+    for i in 0..k {
+        result = result * (n as u128 - i as u128) / (i as u128 + 1);
+    }
+    result as u64
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TallyOutcome {
-    pub tier_pool_amounts: [u64; TIER_COUNT],
-    pub winner_liability: u64,
-    pub player_funded_prizes: u64,
-    pub lp_loss_reserved: u64,
-    pub unused_guarantee: u64,
-    pub rolled_to_lp: u64,
-    pub rolled_to_next_round: u64,
-    pub min_payouts_total: u64,
-    pub premium_payouts_total: u64,
+pub struct PayoutPlan {
+    pub payout_per_winner: [u64; TIER_COUNT],
     pub used_minimum_payouts: bool,
 }
 
-/// Compute final tier pool amounts using the Megapot two-tier payout model:
-///   - guaranteed minimum per winner per tier (if affordable)
-///   - remaining pool distributed by per-tier premium weights
+/// Compute the fixed per-winner payout for each tier, given the frozen prize pool and
+/// configured weights/minimums. The split between guaranteed minimums and premium pool
+/// is decided once here, at reveal time, using the Megapot two-step model:
 ///
-/// If guaranteed minimums would consume the prize pool such that the premium pool
-/// falls below `premium_min_allocation_bps` of the total, the system skips guaranteed
-/// minimums and pays purely by premium weights — preserving solvency and headline payouts.
-pub fn calculate_tally_outcome(
+///   1. min_alloc_total = sum over winning tiers of `min[t] * combos[t]`
+///      (combinatorial worst case — every possible winning combo is sold once).
+///   2. If `min_alloc_total + premium_floor <= prize_pool`, mins are used and
+///      `premium_pool = prize_pool - min_alloc_total`. Otherwise mins are skipped
+///      (`premium_pool = prize_pool`).
+///   3. For each winning tier:
+///        payout_per_winner[t] = min_effective[t] + (premium_pool * weight[t] / 10000) / combos[t]
+///
+/// Non-winning tiers (and tiers with zero combos) get payout 0.
+pub fn compute_payouts_per_winner(
     prize_pool: u64,
-    seed_prize_pool: u64,
-    ticket_prize_pool: u64,
-    lp_guarantee_reserved: u64,
-    tier_winner_counts: &[u32; TIER_COUNT],
+    normal_max: u8,
+    bonus_max: u8,
+    tier_is_winning: &[bool; TIER_COUNT],
     tier_premium_weight_bps: &[u16; TIER_COUNT],
     tier_min_payout_per_winner: &[u64; TIER_COUNT],
     premium_min_allocation_bps: u16,
-    untaken_tier_destination: UntakenTierDestination,
-) -> Result<TallyOutcome> {
-    let mut tier_pool_amounts = [0u64; TIER_COUNT];
+) -> Result<PayoutPlan> {
+    let combos = tier_combos_table(normal_max, bonus_max);
 
-    // Step 1 — sum guaranteed-minimum allocation
+    // Step 1 — sum potential guaranteed-minimum allocation (across winning tiers).
     let mut min_alloc_total: u64 = 0;
-    for t in 1..TIER_COUNT {
-        let count = tier_winner_counts[t] as u64;
-        if count == 0 {
+    for t in 0..TIER_COUNT {
+        if !tier_is_winning[t] {
             continue;
         }
-        let per_winner = tier_min_payout_per_winner[t];
-        if per_winner == 0 {
+        let m = tier_min_payout_per_winner[t];
+        if m == 0 || combos[t] == 0 {
             continue;
         }
-        let tier_min = per_winner
-            .checked_mul(count)
+        let tier_min = m
+            .checked_mul(combos[t])
             .ok_or(error!(LotteryError::MathOverflow))?;
         min_alloc_total = min_alloc_total
             .checked_add(tier_min)
             .ok_or(error!(LotteryError::MathOverflow))?;
     }
 
-    // Step 2 — premium floor required after guaranteed minimums
+    // Step 2 — decide whether minimums fit alongside the required premium floor.
     let premium_floor = bps_amount(prize_pool, premium_min_allocation_bps)?;
     let mins_fit = min_alloc_total
         .checked_add(premium_floor)
         .map(|sum| sum <= prize_pool)
         .unwrap_or(false);
-
     let used_minimum_payouts = mins_fit && min_alloc_total > 0;
     let premium_pool = if used_minimum_payouts {
         prize_pool
@@ -273,88 +314,31 @@ pub fn calculate_tally_outcome(
         prize_pool
     };
 
-    // Step 3 — distribute premium pool by tier weights and add minimums (if used)
-    let mut min_payouts_total: u64 = 0;
-    let mut premium_payouts_total: u64 = 0;
-    let mut winner_liability: u64 = 0;
-
-    for t in 1..TIER_COUNT {
-        let count = tier_winner_counts[t] as u64;
-        if count == 0 {
+    // Step 3 — per-winner payout per tier.
+    let mut payout = [0u64; TIER_COUNT];
+    for t in 0..TIER_COUNT {
+        if !tier_is_winning[t] || combos[t] == 0 {
             continue;
         }
         let weight = tier_premium_weight_bps[t];
-
-        let premium_for_tier = if weight == 0 {
+        let tier_premium = if weight == 0 {
             0
         } else {
             bps_amount(premium_pool, weight)?
         };
-        let premium_per_winner = if count > 0 { premium_for_tier / count } else { 0 };
-        let premium_payable = premium_per_winner
-            .checked_mul(count)
-            .ok_or(error!(LotteryError::MathOverflow))?;
-
+        let premium_per_winner = tier_premium / combos[t];
         let min_per_winner = if used_minimum_payouts {
             tier_min_payout_per_winner[t]
         } else {
             0
         };
-        let min_payable = min_per_winner
-            .checked_mul(count)
-            .ok_or(error!(LotteryError::MathOverflow))?;
-
-        let tier_total = premium_payable
-            .checked_add(min_payable)
-            .ok_or(error!(LotteryError::MathOverflow))?;
-        tier_pool_amounts[t] = tier_total;
-
-        premium_payouts_total = premium_payouts_total
-            .checked_add(premium_payable)
-            .ok_or(error!(LotteryError::MathOverflow))?;
-        min_payouts_total = min_payouts_total
-            .checked_add(min_payable)
-            .ok_or(error!(LotteryError::MathOverflow))?;
-        winner_liability = winner_liability
-            .checked_add(tier_total)
+        payout[t] = premium_per_winner
+            .checked_add(min_per_winner)
             .ok_or(error!(LotteryError::MathOverflow))?;
     }
 
-    // Step 4 — split between player-funded and LP-funded, route unused
-    let player_assets = seed_prize_pool
-        .checked_add(ticket_prize_pool)
-        .ok_or(error!(LotteryError::MathOverflow))?;
-    let player_funded_prizes = winner_liability.min(player_assets);
-    let lp_loss_reserved = winner_liability
-        .checked_sub(player_funded_prizes)
-        .ok_or(error!(LotteryError::MathOverflow))?;
-    require!(
-        lp_loss_reserved <= lp_guarantee_reserved,
-        LotteryError::LpPrincipalUnderfunded
-    );
-
-    let unused_player_assets = player_assets
-        .checked_sub(player_funded_prizes)
-        .ok_or(error!(LotteryError::MathOverflow))?;
-    let unused_guarantee = lp_guarantee_reserved
-        .checked_sub(lp_loss_reserved)
-        .ok_or(error!(LotteryError::MathOverflow))?;
-
-    let (rolled_to_lp, rolled_to_next_round) = match untaken_tier_destination {
-        UntakenTierDestination::LpPool => (unused_player_assets, 0),
-        UntakenTierDestination::NextRound => (0, unused_player_assets),
-    };
-
-    Ok(TallyOutcome {
-        tier_pool_amounts,
-        winner_liability,
-        player_funded_prizes,
-        lp_loss_reserved,
-        unused_guarantee,
-        rolled_to_lp,
-        rolled_to_next_round,
-        min_payouts_total,
-        premium_payouts_total,
+    Ok(PayoutPlan {
+        payout_per_winner: payout,
         used_minimum_payouts,
     })
 }
@@ -362,10 +346,19 @@ pub fn calculate_tally_outcome(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::{MEGAPOT_TIER_IS_WINNING, MEGAPOT_TIER_PREMIUM_WEIGHT_BPS};
 
     fn weights_jackpot_only() -> [u16; TIER_COUNT] {
         let mut w = [0u16; TIER_COUNT];
         w[11] = 10_000;
+        w
+    }
+
+    fn all_winning() -> [bool; TIER_COUNT] {
+        let mut w = [false; TIER_COUNT];
+        for t in 1..TIER_COUNT {
+            w[t] = true;
+        }
         w
     }
 
@@ -422,11 +415,20 @@ mod tests {
         let mut w = [0u16; TIER_COUNT];
         w[11] = 5_000;
         w[10] = 5_000;
-        validate_tier_weight_bps(&w).unwrap();
+        validate_tier_weight_bps(&w, &all_winning()).unwrap();
 
         let mut w2 = [0u16; TIER_COUNT];
         w2[11] = 9_000;
-        assert!(validate_tier_weight_bps(&w2).is_err());
+        assert!(validate_tier_weight_bps(&w2, &all_winning()).is_err());
+    }
+
+    #[test]
+    fn validate_weights_rejects_premium_for_non_winning_tier() {
+        let mut w = [0u16; TIER_COUNT];
+        // give some weight to tier 0 which is non-winning by Megapot defaults
+        w[0] = 1_000;
+        w[11] = 9_000;
+        assert!(validate_tier_weight_bps(&w, &MEGAPOT_TIER_IS_WINNING).is_err());
     }
 
     #[test]
@@ -437,89 +439,77 @@ mod tests {
     }
 
     #[test]
-    fn tally_premium_only_path_when_no_minimums() {
-        let mut counts = [0u32; TIER_COUNT];
-        counts[11] = 1;
-        let out = calculate_tally_outcome(
-            2_000_000,
-            100_000,
-            400_000,
-            1_500_000,
-            &counts,
+    fn binomial_basic() {
+        assert_eq!(binomial(5, 0), 1);
+        assert_eq!(binomial(5, 5), 1);
+        assert_eq!(binomial(5, 2), 10);
+        assert_eq!(binomial(25, 5), 53_130);
+        assert_eq!(binomial(30, 5), 142_506);
+    }
+
+    #[test]
+    fn combos_jackpot() {
+        // 5 matches + bonus on 1-30 normals, 1-15 bonus: only 1 winning combo
+        assert_eq!(tier_combos(5, true, 30, 15), 1);
+        // 5 matches no bonus: 1 way for normals * 14 non-winning bonus values
+        assert_eq!(tier_combos(5, false, 30, 15), 14);
+        // 0 matches no bonus: C(5,0)*C(25,5) * 14 = 53130 * 14
+        assert_eq!(tier_combos(0, false, 30, 15), 53_130 * 14);
+    }
+
+    #[test]
+    fn payout_premium_only_path() {
+        let plan = compute_payouts_per_winner(
+            1_000_000_000,
+            30,
+            15,
+            &MEGAPOT_TIER_IS_WINNING,
             &weights_jackpot_only(),
             &no_mins(),
             0,
-            UntakenTierDestination::NextRound,
         )
         .unwrap();
-        assert!(!out.used_minimum_payouts);
-        assert_eq!(out.tier_pool_amounts[11], 2_000_000);
-        assert_eq!(out.player_funded_prizes, 500_000);
-        assert_eq!(out.lp_loss_reserved, 1_500_000);
+        assert!(!plan.used_minimum_payouts);
+        // jackpot: 100% of 1B / 1 combo = 1B
+        assert_eq!(plan.payout_per_winner[11], 1_000_000_000);
+        // tier 0 non-winning -> 0
+        assert_eq!(plan.payout_per_winner[0], 0);
+        assert_eq!(plan.payout_per_winner[2], 0);
     }
 
     #[test]
-    fn tally_minimums_when_affordable() {
-        let mut counts = [0u32; TIER_COUNT];
-        counts[3] = 2;
-        counts[11] = 1;
-
-        let mut weights = [0u16; TIER_COUNT];
-        weights[3] = 1_000;
-        weights[11] = 9_000;
-
-        let mut mins = [0u64; TIER_COUNT];
-        mins[3] = 1_000_000; // 1 USDC
-        mins[11] = 0;
-
-        let out = calculate_tally_outcome(
-            100_000_000, // 100 USDC
+    fn payout_uses_megapot_default_weights() {
+        let plan = compute_payouts_per_winner(
+            1_000_000_000,
+            30,
+            15,
+            &MEGAPOT_TIER_IS_WINNING,
+            &MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
+            &no_mins(),
             0,
-            100_000_000,
-            0,
-            &counts,
-            &weights,
-            &mins,
-            2_000, // require 20% premium floor
-            UntakenTierDestination::NextRound,
         )
         .unwrap();
-        assert!(out.used_minimum_payouts);
-        assert_eq!(out.min_payouts_total, 2_000_000);
-        // premium_pool = 100M - 2M = 98M
-        // tier 3: 10% * 98M / 2 = 4.9M each, 9.8M total + 2M min = 11.8M
-        // tier 11: 90% * 98M / 1 = 88.2M
-        assert_eq!(out.tier_pool_amounts[3], 11_800_000);
-        assert_eq!(out.tier_pool_amounts[11], 88_200_000);
+        // jackpot tier (5+B): 4000bps of 1B = 400M, 1 combo => 400M per winner
+        assert_eq!(plan.payout_per_winner[11], 400_000_000);
+        // 5 no bonus: 600bps of 1B = 60M, 14 combos => 4_285_714
+        assert_eq!(plan.payout_per_winner[10], 60_000_000 / 14);
     }
 
     #[test]
-    fn tally_skips_minimums_when_pool_too_small() {
-        let mut counts = [0u32; TIER_COUNT];
-        counts[3] = 1_000;
-        counts[11] = 0;
-
-        let mut weights = [0u16; TIER_COUNT];
-        weights[3] = 5_000;
-        weights[11] = 5_000;
-
+    fn payout_skips_minimums_when_too_large() {
+        // huge per-tier minimum, small pool — minimums won't fit, fall back to premium-only.
         let mut mins = [0u64; TIER_COUNT];
-        mins[3] = 1_000_000;
-
-        let out = calculate_tally_outcome(
-            500_000_000,
-            0,
-            500_000_000,
-            0,
-            &counts,
-            &weights,
+        mins[1] = 1_000_000_000; // 1000 USDC for the bonusball-only tier
+        let plan = compute_payouts_per_winner(
+            10_000_000,
+            30,
+            15,
+            &MEGAPOT_TIER_IS_WINNING,
+            &MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
             &mins,
             2_000,
-            UntakenTierDestination::NextRound,
         )
         .unwrap();
-        // 1000 winners * 1 USDC = 1000 USDC = 1B units > pool. Skip mins.
-        assert!(!out.used_minimum_payouts);
-        assert_eq!(out.min_payouts_total, 0);
+        assert!(!plan.used_minimum_payouts);
     }
 }

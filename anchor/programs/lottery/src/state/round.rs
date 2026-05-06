@@ -7,10 +7,9 @@ use crate::constants::{NORMAL_BALL_COUNT, TIER_COUNT};
 pub enum RoundState {
     Open = 0,
     Drawing = 1,
-    Settled = 2,
-    Claimable = 3,
-    Archived = 4,
-    Emergency = 5,
+    Claimable = 2,
+    Archived = 3,
+    Emergency = 4,
 }
 
 #[account]
@@ -40,31 +39,41 @@ pub struct Round {
     pub lp_edge_accrued: u64,
     pub referral_fees_accrued: u64,
 
-    pub tier_winner_counts: [u32; TIER_COUNT],
-    pub tier_pool_amounts: [u64; TIER_COUNT],
+    /// Prize pool seeded from the previous round's rollover (set at start_round time).
+    pub seed_prize_pool: u64,
+    pub lp_guarantee_reserved: u64,
+
+    /// Fixed payout (USDC base units) per winning ticket for each tier.
+    /// Populated by `finalize_payouts` (NOT `reveal_draw`) once winner counts are known:
+    ///   payout[t] = min[t] + (premium * weight[t]) / max(combos[t], winner_count[t])
+    /// Zero for non-winning tiers and tiers with no registered winners.
+    pub payout_per_winner: [u64; TIER_COUNT],
+
+    /// Snapshot of `Config.tier_is_winning` taken at start_round.
+    pub tier_is_winning: [bool; TIER_COUNT],
+
+    /// True when finalize_payouts applied guaranteed minimums; false when minimums were
+    /// skipped because they would have consumed the premium floor.
+    pub used_minimum_payouts: bool,
+
     pub tier_paid_counts: [u32; TIER_COUNT],
     pub tier_paid_amounts: [u64; TIER_COUNT],
 
-    pub tally_done: bool,
-    pub used_minimum_payouts: bool,
-    pub min_payouts_total: u64,
-    pub premium_payouts_total: u64,
+    /// Number of registered winners per tier. Incremented by `register_winner` during
+    /// the registration window. Used by `finalize_payouts` to size the per-winner premium.
+    pub tier_winner_counts: [u32; TIER_COUNT],
+
+    /// Unix timestamp after which `register_winner` is rejected and `finalize_payouts`
+    /// becomes callable. Set in `reveal_draw` to `settled_at + registration_window_secs`.
+    pub registration_close_time: i64,
+
+    /// True once `finalize_payouts` has computed `payout_per_winner` for this round.
+    /// Claims are only permitted after this flag is set.
+    pub finalized: bool,
+
+    /// Filled in by archive_round.
     pub rolled_to_lp: u64,
     pub rolled_to_next_round: u64,
-
-    /// Prize pool seeded from the previous round's rollover (set at start_round time).
-    pub seed_prize_pool: u64,
-
-    pub ticket_prize_pool: u64,
-    pub lp_guarantee_reserved: u64,
-    pub lp_loss_reserved: u64,
-    pub player_funded_prizes: u64,
-
-    /// Snapshot of tier weights and minimums at round start. Mid-round config changes
-    /// don't affect rounds already in flight.
-    pub tier_premium_weight_bps: [u16; TIER_COUNT],
-    pub tier_min_payout_per_winner: [u64; TIER_COUNT],
-    pub premium_min_allocation_bps: u16,
 }
 
 impl Round {
@@ -76,15 +85,16 @@ impl Round {
         + NORMAL_BALL_COUNT + 1                 // winning_normals, winning_bonusball
         + 8 + 8                                 // ticket_count, claimed_count
         + 8 + 8 + 8                             // prize_pool, lp_edge_accrued, referral_fees_accrued
-        + 4 * TIER_COUNT                        // tier_winner_counts
-        + 8 * TIER_COUNT                        // tier_pool_amounts
+        + 8 + 8                                 // seed_prize_pool, lp_guarantee_reserved
+        + 8 * TIER_COUNT                        // payout_per_winner
+        + 1 * TIER_COUNT                        // tier_is_winning
+        + 1                                     // used_minimum_payouts
         + 4 * TIER_COUNT                        // tier_paid_counts
         + 8 * TIER_COUNT                        // tier_paid_amounts
-        + 1 + 1 + 8 + 8 + 8 + 8                 // tally fields
-        + 8 + 8 + 8 + 8 + 8                     // seed/ticket/guarantee/loss/player-funded
-        + 2 * TIER_COUNT                        // tier_premium_weight_bps snapshot
-        + 8 * TIER_COUNT                        // tier_min_payout_per_winner snapshot
-        + 2                                     // premium_min_allocation_bps snapshot
+        + 4 * TIER_COUNT                        // tier_winner_counts
+        + 8                                     // registration_close_time
+        + 1                                     // finalized
+        + 8 + 8                                 // rolled_to_lp, rolled_to_next_round
         + 64;                                   // padding
 
     pub fn is_open(&self) -> bool {
@@ -95,12 +105,12 @@ impl Round {
         matches!(self.state, RoundState::Drawing)
     }
 
-    pub fn is_settled(&self) -> bool {
-        matches!(self.state, RoundState::Settled)
-    }
-
     pub fn is_claimable(&self) -> bool {
         matches!(self.state, RoundState::Claimable)
+    }
+
+    pub fn is_archived(&self) -> bool {
+        matches!(self.state, RoundState::Archived)
     }
 
     pub fn is_emergency(&self) -> bool {

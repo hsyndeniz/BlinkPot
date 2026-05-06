@@ -6,7 +6,6 @@ import {
   fetchAllMaybeRound,
   fetchAllMaybeTicket,
   fetchMaybeBuyerEntry,
-  fetchMaybeCompoundState,
   fetchMaybeConfig,
   fetchMaybeLpPosition,
   fetchMaybeLpVault,
@@ -17,7 +16,6 @@ import {
   getTicketDecoder,
   getTicketDiscriminatorBytes,
   type BuyerEntry,
-  type CompoundState,
   type Config,
   type LpPosition,
   type LpVault,
@@ -32,7 +30,6 @@ import { useCluster } from "../../components/cluster-context";
 import { useSolanaClient } from "../solana-client-context";
 import {
   findBuyerEntryPda,
-  findCompoundStatePda,
   findConfigPda,
   findLpVaultPda,
   findPositionPda,
@@ -236,6 +233,12 @@ export function useRounds(range: { from?: bigint; to?: bigint } = {}) {
     const from = range.from ?? (to > 5n ? to - 5n : 1n);
     const out: bigint[] = [];
     for (let id = from; id <= to && id > 0n; id += 1n) out.push(id);
+    console.log("🔄 useRounds calculated IDs:", {
+      current: current.toString(),
+      from: from.toString(),
+      to: to.toString(),
+      ids: out.map((id) => id.toString()),
+    });
     return out.reverse();
   }, [counter.counter?.currentRoundId, range.from, range.to]);
 
@@ -247,9 +250,17 @@ export function useRounds(range: { from?: bigint; to?: bigint } = {}) {
       const addresses = await Promise.all(
         ids.map((id) => findRoundPda(id).then(pdaAddress))
       );
-      return fetchAllMaybeRound(client.rpc, addresses, {
+      const rounds = await fetchAllMaybeRound(client.rpc, addresses, {
         commitment: "confirmed",
       });
+      console.log("🔄 useRounds fetched:", {
+        total: rounds.length,
+        existing: rounds.filter((r) => r.exists).length,
+        roundIds: rounds
+          .filter((r) => r.exists)
+          .map((r) => r.data.roundId.toString()),
+      });
+      return rounds;
     },
     { revalidateOnFocus: true }
   );
@@ -428,8 +439,20 @@ export function useBuyerEntry(roundId?: bigint | number, owner?: Address) {
           owner,
         ] as const)
       : null,
-    async ([, , , id, buyer]) =>
-      pdaAddress(await findBuyerEntryPda({ roundId: BigInt(id), buyer })),
+    async ([, , , id, buyer]) => {
+      const pda = pdaAddress(
+        await findBuyerEntryPda({ roundId: BigInt(id), buyer })
+      );
+      console.log(
+        "🔍 BuyerEntry PDA calculated:",
+        pda,
+        "for round:",
+        id,
+        "buyer:",
+        buyer
+      );
+      return pda;
+    },
     { revalidateOnFocus: false }
   );
 
@@ -445,10 +468,24 @@ export function useBuyerEntry(roundId?: bigint | number, owner?: Address) {
           address.data,
         ] as const)
       : null,
-    async ([, , , , , , buyerEntryAddress]) =>
-      fetchMaybeBuyerEntry(client.rpc, buyerEntryAddress, {
-        commitment: "confirmed",
-      }),
+    async ([, , , , , , buyerEntryAddress]) => {
+      console.log("🔍 Fetching BuyerEntry account:", buyerEntryAddress);
+      const account = await fetchMaybeBuyerEntry(
+        client.rpc,
+        buyerEntryAddress,
+        {
+          commitment: "confirmed",
+        }
+      );
+      console.log("🔍 BuyerEntry fetch result:", {
+        address: buyerEntryAddress,
+        exists: account.exists,
+        ticketCount: account.exists
+          ? account.data.ticketCount?.toString()
+          : "N/A",
+      });
+      return account;
+    },
     { revalidateOnFocus: true }
   );
 
@@ -472,6 +509,14 @@ export function useTickets(roundId?: bigint | number, owner?: Address) {
   const ticketCount = buyerEntry.buyerEntry?.ticketCount ?? 0n;
   const cappedTicketCount = ticketCount > 500n ? 500 : Number(ticketCount);
 
+  console.log("🎫 useTickets called:", {
+    roundId: normalized?.toString(),
+    owner,
+    ticketCount: ticketCount.toString(),
+    cappedTicketCount,
+    buyerEntryExists: buyerEntry.exists,
+  });
+
   const addresses = useSWR(
     normalized != null && owner && cappedTicketCount > 0
       ? ([
@@ -484,6 +529,7 @@ export function useTickets(roundId?: bigint | number, owner?: Address) {
         ] as const)
       : null,
     async ([, , , id, ticketOwner, count]) => {
+      console.log("🎫 Calculating ticket PDAs for count:", count);
       const list: Address[] = [];
       for (let i = 0; i < count; i += 1) {
         list.push(
@@ -496,6 +542,7 @@ export function useTickets(roundId?: bigint | number, owner?: Address) {
           )
         );
       }
+      console.log("🎫 Calculated", list.length, "ticket addresses");
       return list;
     },
     { revalidateOnFocus: false }
@@ -513,10 +560,33 @@ export function useTickets(roundId?: bigint | number, owner?: Address) {
           addresses.data.join(","),
         ] as const)
       : null,
-    async () =>
-      fetchAllMaybeTicket(client.rpc, addresses.data ?? [], {
-        commitment: "confirmed",
-      }),
+    async () => {
+      const allAddresses = addresses.data ?? [];
+      console.log("🎫 Fetching ticket accounts, count:", allAddresses.length);
+      if (allAddresses.length === 0) return [];
+
+      // Batch requests to avoid RPC "Too many inputs" error (max 100 per request)
+      const BATCH_SIZE = 100;
+      const batches: Address[][] = [];
+      for (let i = 0; i < allAddresses.length; i += BATCH_SIZE) {
+        batches.push(allAddresses.slice(i, i + BATCH_SIZE));
+      }
+
+      const results = await Promise.all(
+        batches.map((batch) =>
+          fetchAllMaybeTicket(client.rpc, batch, {
+            commitment: "confirmed",
+          })
+        )
+      );
+
+      const flattened = results.flat();
+      console.log("🎫 Fetched tickets:", {
+        total: flattened.length,
+        existing: flattened.filter((t) => t.exists).length,
+      });
+      return flattened;
+    },
     { revalidateOnFocus: true }
   );
 
@@ -552,46 +622,6 @@ export function useTickets(roundId?: bigint | number, owner?: Address) {
     buyerEntry,
     tickets: (result.data ?? []).filter(exists),
     isTruncated: ticketCount > BigInt(cappedTicketCount),
-  };
-}
-
-export function useCompoundState(owner?: Address) {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-
-  const address = useSWR(
-    owner ? (["lottery", "pda", "compoundState", owner] as const) : null,
-    async ([, , , compoundOwner]) =>
-      pdaAddress(await findCompoundStatePda({ buyer: compoundOwner })),
-    { revalidateOnFocus: false }
-  );
-
-  const result = useSWR(
-    address.data
-      ? ([
-          "lottery",
-          "account",
-          "compoundState",
-          cluster,
-          owner,
-          address.data,
-        ] as const)
-      : null,
-    async ([, , , , , compoundAddress]) =>
-      fetchMaybeCompoundState(client.rpc, compoundAddress, {
-        commitment: "confirmed",
-      }),
-    { revalidateOnFocus: true }
-  );
-
-  useAccountSubscription(address.data, () => result.mutate());
-
-  return {
-    ...result,
-    address: address.data,
-    account: result.data as MaybeAccount<CompoundState> | undefined,
-    compoundState: exists(result.data) ? result.data.data : undefined,
-    exists: !!result.data?.exists,
   };
 }
 

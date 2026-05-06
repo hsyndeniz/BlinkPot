@@ -10,7 +10,7 @@ use crate::constants::{
 use crate::errors::LotteryError;
 use crate::events::{RoundArchived, RoundOpened};
 use crate::math::{assets_for_shares, bps_amount, compute_dynamic_bonusball};
-use crate::state::config::{Config, RoundCounter};
+use crate::state::config::{Config, RoundCounter, UntakenTierDestination};
 use crate::state::lp::LpVault;
 use crate::state::round::{Round, RoundState};
 
@@ -109,8 +109,10 @@ pub fn start_round(
         let data = ctx.accounts.previous_round.try_borrow_data()?;
         let prev = Round::try_deserialize(&mut data.as_ref())
             .map_err(|_| error!(LotteryError::PreviousRoundUnsettled))?;
+        // Previous round must have been archived — otherwise we don't know what its
+        // unclaimed remainder was, and rollovers would be racy with in-flight claims.
         require!(
-            matches!(prev.state, RoundState::Claimable | RoundState::Archived) && prev.tally_done,
+            matches!(prev.state, RoundState::Archived),
             LotteryError::PreviousRoundUnsettled
         );
         seed_prize_pool = prev.rolled_to_next_round;
@@ -236,26 +238,17 @@ pub fn start_round(
     round.prize_pool = initial_pool;
     round.lp_edge_accrued = 0;
     round.referral_fees_accrued = 0;
-    round.tier_winner_counts = [0u32; TIER_COUNT];
-    round.tier_pool_amounts = [0u64; TIER_COUNT];
+    round.seed_prize_pool = seed_prize_pool;
+    round.lp_guarantee_reserved = guaranteed_prize_pool;
+    round.payout_per_winner = [0u64; TIER_COUNT];
+    round.used_minimum_payouts = false;
     round.tier_paid_counts = [0u32; TIER_COUNT];
     round.tier_paid_amounts = [0u64; TIER_COUNT];
-    round.tally_done = false;
-    round.used_minimum_payouts = false;
-    round.min_payouts_total = 0;
-    round.premium_payouts_total = 0;
     round.rolled_to_lp = 0;
     round.rolled_to_next_round = 0;
-    round.seed_prize_pool = seed_prize_pool;
-    round.ticket_prize_pool = 0;
-    round.lp_guarantee_reserved = guaranteed_prize_pool;
-    round.lp_loss_reserved = 0;
-    round.player_funded_prizes = 0;
 
-    // Snapshot tier config so mid-round admin updates don't affect this round.
-    round.tier_premium_weight_bps = ctx.accounts.config.tier_premium_weight_bps;
-    round.tier_min_payout_per_winner = ctx.accounts.config.tier_min_payout_per_winner;
-    round.premium_min_allocation_bps = ctx.accounts.config.premium_min_allocation_bps;
+    // Snapshot the winning-tier table so mid-round admin updates don't affect this round.
+    round.tier_is_winning = ctx.accounts.config.tier_is_winning;
 
     counter.current_round_id = next_round_id;
 
@@ -279,22 +272,118 @@ pub struct ArchiveRound<'info> {
         bump = config.bump,
         has_one = admin @ LotteryError::Unauthorized,
     )]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         mut,
         seeds = [ROUND_SEED, &round.round_id.to_le_bytes()],
         bump = round.bump,
     )]
-    pub round: Account<'info, Round>,
+    pub round: Box<Account<'info, Round>>,
+
+    #[account(
+        mut,
+        seeds = [LP_VAULT_SEED],
+        bump = lp_vault.bump,
+    )]
+    pub lp_vault: Box<Account<'info, LpVault>>,
+
+    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
+    pub usdc_mint: Box<Account<'info, Mint>>,
+
+    #[account(
+        mut,
+        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = prize_vault_authority,
+    )]
+    pub prize_vault: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: PDA authority for prize_vault, signs the CPI transfer.
+    #[account(seeds = [PRIZE_VAULT_AUTHORITY_SEED], bump = config.prize_vault_authority_bump)]
+    pub prize_vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = lp_authority,
+    )]
+    pub lp_principal: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: PDA authority for lp_principal.
+    #[account(seeds = [LP_AUTHORITY_SEED], bump = config.lp_authority_bump)]
+    pub lp_authority: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
+/// Sweep the round's leftover prize budget once the claim window is considered closed.
+/// Leftover = round.prize_pool - sum(tier_paid_amounts). Routes per
+/// `config.untaken_tier_destination`: either back to the LP pool, or recorded as
+/// `rolled_to_next_round` so the next `start_round` can pick it up as `seed_prize_pool`.
 pub fn archive_round(ctx: Context<ArchiveRound>) -> Result<()> {
     let round = &mut ctx.accounts.round;
     require!(round.is_claimable(), LotteryError::RoundNotArchivable);
+
+    // Sum the gross paid out across all tiers.
+    let mut paid_total: u64 = 0;
+    for v in round.tier_paid_amounts.iter() {
+        paid_total = paid_total
+            .checked_add(*v)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+    }
+    let leftover = round
+        .prize_pool
+        .checked_sub(paid_total)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+
+    match ctx.accounts.config.untaken_tier_destination {
+        UntakenTierDestination::LpPool => {
+            round.rolled_to_lp = leftover;
+            round.rolled_to_next_round = 0;
+            if leftover > 0 {
+                let signer_seeds: &[&[u8]] = &[
+                    PRIZE_VAULT_AUTHORITY_SEED,
+                    &[ctx.accounts.config.prize_vault_authority_bump],
+                ];
+                let signers = &[signer_seeds];
+                token::transfer_checked(
+                    CpiContext::new_with_signer(
+                        ctx.accounts.token_program.to_account_info(),
+                        TransferChecked {
+                            from: ctx.accounts.prize_vault.to_account_info(),
+                            mint: ctx.accounts.usdc_mint.to_account_info(),
+                            to: ctx.accounts.lp_principal.to_account_info(),
+                            authority: ctx.accounts.prize_vault_authority.to_account_info(),
+                        },
+                        signers,
+                    ),
+                    leftover,
+                    ctx.accounts.usdc_mint.decimals,
+                )?;
+                let lp_vault = &mut ctx.accounts.lp_vault;
+                lp_vault.total_assets = lp_vault
+                    .total_assets
+                    .checked_add(leftover)
+                    .ok_or(error!(LotteryError::MathOverflow))?;
+            }
+        }
+        UntakenTierDestination::NextRound => {
+            round.rolled_to_lp = 0;
+            round.rolled_to_next_round = leftover;
+            // The leftover stays inside `prize_vault` (a single shared PDA) — the next
+            // `start_round` reads `prev.rolled_to_next_round` as `seed_prize_pool`.
+        }
+    }
+
     round.state = RoundState::Archived;
     emit!(RoundArchived {
-        round_id: round.round_id
+        round_id: round.round_id,
+        rolled_to_lp: round.rolled_to_lp,
+        rolled_to_next_round: round.rolled_to_next_round,
     });
     let _ = BPS_DENOM;
     Ok(())

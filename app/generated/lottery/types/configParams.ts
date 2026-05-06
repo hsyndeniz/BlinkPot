@@ -54,7 +54,7 @@ export type ConfigParams = {
   lpPoolCap: bigint;
   /**
    * Premium pool weights per tier in BPS (must sum to exactly 10_000).
-   * tier_premium_weight_bps[0] must be 0.
+   * Non-winning tiers must have weight 0.
    */
   tierPremiumWeightBps: Array<number>;
   /**
@@ -62,6 +62,12 @@ export type ConfigParams = {
    * 0 = no minimum for that tier.
    */
   tierMinPayoutPerWinner: Array<bigint>;
+  /**
+   * Whether a tier is claimable. Megapot defaults: tier 0 (no match) and tier 2
+   * (1 normal, no bonus) are non-winning; everything else is winning even if its
+   * premium weight is 0 (e.g. "bonusball only" earns just the guaranteed minimum).
+   */
+  tierIsWinning: Array<boolean>;
   /**
    * Floor (in BPS) of prize_pool that must remain in the premium pool after guaranteed
    * minimums are paid. If guaranteed minimums would consume more than (1 - floor),
@@ -97,7 +103,7 @@ export type ConfigParamsArgs = {
   lpPoolCap: number | bigint;
   /**
    * Premium pool weights per tier in BPS (must sum to exactly 10_000).
-   * tier_premium_weight_bps[0] must be 0.
+   * Non-winning tiers must have weight 0.
    */
   tierPremiumWeightBps: Array<number>;
   /**
@@ -105,6 +111,12 @@ export type ConfigParamsArgs = {
    * 0 = no minimum for that tier.
    */
   tierMinPayoutPerWinner: Array<number | bigint>;
+  /**
+   * Whether a tier is claimable. Megapot defaults: tier 0 (no match) and tier 2
+   * (1 normal, no bonus) are non-winning; everything else is winning even if its
+   * premium weight is 0 (e.g. "bonusball only" earns just the guaranteed minimum).
+   */
+  tierIsWinning: Array<boolean>;
   /**
    * Floor (in BPS) of prize_pool that must remain in the premium pool after guaranteed
    * minimums are paid. If guaranteed minimums would consume more than (1 - floor),
@@ -136,6 +148,7 @@ export function getConfigParamsEncoder(): FixedSizeEncoder<ConfigParamsArgs> {
     ["lpPoolCap", getU64Encoder()],
     ["tierPremiumWeightBps", getArrayEncoder(getU16Encoder(), { size: 12 })],
     ["tierMinPayoutPerWinner", getArrayEncoder(getU64Encoder(), { size: 12 })],
+    ["tierIsWinning", getArrayEncoder(getBooleanEncoder(), { size: 12 })],
     ["premiumMinAllocationBps", getU16Encoder()],
     ["untakenTierDestination", getUntakenTierDestinationEncoder()],
     ["dynamicBonusballEnabled", getBooleanEncoder()],
@@ -161,6 +174,7 @@ export function getConfigParamsDecoder(): FixedSizeDecoder<ConfigParams> {
     ["lpPoolCap", getU64Decoder()],
     ["tierPremiumWeightBps", getArrayDecoder(getU16Decoder(), { size: 12 })],
     ["tierMinPayoutPerWinner", getArrayDecoder(getU64Decoder(), { size: 12 })],
+    ["tierIsWinning", getArrayDecoder(getBooleanDecoder(), { size: 12 })],
     ["premiumMinAllocationBps", getU16Decoder()],
     ["untakenTierDestination", getUntakenTierDestinationDecoder()],
     ["dynamicBonusballEnabled", getBooleanDecoder()],

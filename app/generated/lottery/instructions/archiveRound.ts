@@ -30,9 +30,20 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findConfigPda } from "../pdas";
+import {
+  findConfigPda,
+  findLpAuthorityPda,
+  findLpPrincipalPda,
+  findLpVaultPda,
+  findPrizeVaultAuthorityPda,
+  findPrizeVaultPda,
+} from "../pdas";
 import { LOTTERY_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import {
+  expectAddress,
+  getAccountMetaFactory,
+  type ResolvedAccount,
+} from "../shared";
 
 export const ARCHIVE_ROUND_DISCRIMINATOR = new Uint8Array([
   199, 98, 75, 46, 241, 246, 3, 138,
@@ -49,6 +60,14 @@ export type ArchiveRoundInstruction<
   TAccountAdmin extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
+  TAccountLpVault extends string | AccountMeta<string> = string,
+  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPrizeVault extends string | AccountMeta<string> = string,
+  TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
+  TAccountLpPrincipal extends string | AccountMeta<string> = string,
+  TAccountLpAuthority extends string | AccountMeta<string> = string,
+  TAccountTokenProgram extends string | AccountMeta<string> =
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -64,6 +83,27 @@ export type ArchiveRoundInstruction<
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
         : TAccountRound,
+      TAccountLpVault extends string
+        ? WritableAccount<TAccountLpVault>
+        : TAccountLpVault,
+      TAccountUsdcMint extends string
+        ? ReadonlyAccount<TAccountUsdcMint>
+        : TAccountUsdcMint,
+      TAccountPrizeVault extends string
+        ? WritableAccount<TAccountPrizeVault>
+        : TAccountPrizeVault,
+      TAccountPrizeVaultAuthority extends string
+        ? ReadonlyAccount<TAccountPrizeVaultAuthority>
+        : TAccountPrizeVaultAuthority,
+      TAccountLpPrincipal extends string
+        ? WritableAccount<TAccountLpPrincipal>
+        : TAccountLpPrincipal,
+      TAccountLpAuthority extends string
+        ? ReadonlyAccount<TAccountLpAuthority>
+        : TAccountLpAuthority,
+      TAccountTokenProgram extends string
+        ? ReadonlyAccount<TAccountTokenProgram>
+        : TAccountTokenProgram,
       ...TRemainingAccounts,
     ]
   >;
@@ -99,26 +139,65 @@ export type ArchiveRoundAsyncInput<
   TAccountAdmin extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
+  TAccountLpVault extends string = string,
+  TAccountUsdcMint extends string = string,
+  TAccountPrizeVault extends string = string,
+  TAccountPrizeVaultAuthority extends string = string,
+  TAccountLpPrincipal extends string = string,
+  TAccountLpAuthority extends string = string,
+  TAccountTokenProgram extends string = string,
 > = {
   admin: TransactionSigner<TAccountAdmin>;
   config?: Address<TAccountConfig>;
   round: Address<TAccountRound>;
+  lpVault?: Address<TAccountLpVault>;
+  usdcMint: Address<TAccountUsdcMint>;
+  prizeVault?: Address<TAccountPrizeVault>;
+  prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
+  lpPrincipal?: Address<TAccountLpPrincipal>;
+  lpAuthority?: Address<TAccountLpAuthority>;
+  tokenProgram?: Address<TAccountTokenProgram>;
 };
 
 export async function getArchiveRoundInstructionAsync<
   TAccountAdmin extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
+  TAccountLpVault extends string,
+  TAccountUsdcMint extends string,
+  TAccountPrizeVault extends string,
+  TAccountPrizeVaultAuthority extends string,
+  TAccountLpPrincipal extends string,
+  TAccountLpAuthority extends string,
+  TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
-  input: ArchiveRoundAsyncInput<TAccountAdmin, TAccountConfig, TAccountRound>,
+  input: ArchiveRoundAsyncInput<
+    TAccountAdmin,
+    TAccountConfig,
+    TAccountRound,
+    TAccountLpVault,
+    TAccountUsdcMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
+  >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
   ArchiveRoundInstruction<
     TProgramAddress,
     TAccountAdmin,
     TAccountConfig,
-    TAccountRound
+    TAccountRound,
+    TAccountLpVault,
+    TAccountUsdcMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
   >
 > {
   // Program address.
@@ -129,6 +208,16 @@ export async function getArchiveRoundInstructionAsync<
     admin: { value: input.admin ?? null, isWritable: false },
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
+    lpVault: { value: input.lpVault ?? null, isWritable: true },
+    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    prizeVault: { value: input.prizeVault ?? null, isWritable: true },
+    prizeVaultAuthority: {
+      value: input.prizeVaultAuthority ?? null,
+      isWritable: false,
+    },
+    lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
+    lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
+    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -139,6 +228,29 @@ export async function getArchiveRoundInstructionAsync<
   if (!accounts.config.value) {
     accounts.config.value = await findConfigPda();
   }
+  if (!accounts.lpVault.value) {
+    accounts.lpVault.value = await findLpVaultPda();
+  }
+  if (!accounts.prizeVault.value) {
+    accounts.prizeVault.value = await findPrizeVaultPda({
+      usdcMint: expectAddress(accounts.usdcMint.value),
+    });
+  }
+  if (!accounts.prizeVaultAuthority.value) {
+    accounts.prizeVaultAuthority.value = await findPrizeVaultAuthorityPda();
+  }
+  if (!accounts.lpPrincipal.value) {
+    accounts.lpPrincipal.value = await findLpPrincipalPda({
+      usdcMint: expectAddress(accounts.usdcMint.value),
+    });
+  }
+  if (!accounts.lpAuthority.value) {
+    accounts.lpAuthority.value = await findLpAuthorityPda();
+  }
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
@@ -146,6 +258,13 @@ export async function getArchiveRoundInstructionAsync<
       getAccountMeta(accounts.admin),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
+      getAccountMeta(accounts.lpVault),
+      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.prizeVault),
+      getAccountMeta(accounts.prizeVaultAuthority),
+      getAccountMeta(accounts.lpPrincipal),
+      getAccountMeta(accounts.lpAuthority),
+      getAccountMeta(accounts.tokenProgram),
     ],
     data: getArchiveRoundInstructionDataEncoder().encode({}),
     programAddress,
@@ -153,7 +272,14 @@ export async function getArchiveRoundInstructionAsync<
     TProgramAddress,
     TAccountAdmin,
     TAccountConfig,
-    TAccountRound
+    TAccountRound,
+    TAccountLpVault,
+    TAccountUsdcMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
   >);
 }
 
@@ -161,25 +287,64 @@ export type ArchiveRoundInput<
   TAccountAdmin extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
+  TAccountLpVault extends string = string,
+  TAccountUsdcMint extends string = string,
+  TAccountPrizeVault extends string = string,
+  TAccountPrizeVaultAuthority extends string = string,
+  TAccountLpPrincipal extends string = string,
+  TAccountLpAuthority extends string = string,
+  TAccountTokenProgram extends string = string,
 > = {
   admin: TransactionSigner<TAccountAdmin>;
   config: Address<TAccountConfig>;
   round: Address<TAccountRound>;
+  lpVault: Address<TAccountLpVault>;
+  usdcMint: Address<TAccountUsdcMint>;
+  prizeVault: Address<TAccountPrizeVault>;
+  prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
+  lpPrincipal: Address<TAccountLpPrincipal>;
+  lpAuthority: Address<TAccountLpAuthority>;
+  tokenProgram?: Address<TAccountTokenProgram>;
 };
 
 export function getArchiveRoundInstruction<
   TAccountAdmin extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
+  TAccountLpVault extends string,
+  TAccountUsdcMint extends string,
+  TAccountPrizeVault extends string,
+  TAccountPrizeVaultAuthority extends string,
+  TAccountLpPrincipal extends string,
+  TAccountLpAuthority extends string,
+  TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
-  input: ArchiveRoundInput<TAccountAdmin, TAccountConfig, TAccountRound>,
+  input: ArchiveRoundInput<
+    TAccountAdmin,
+    TAccountConfig,
+    TAccountRound,
+    TAccountLpVault,
+    TAccountUsdcMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
+  >,
   config?: { programAddress?: TProgramAddress },
 ): ArchiveRoundInstruction<
   TProgramAddress,
   TAccountAdmin,
   TAccountConfig,
-  TAccountRound
+  TAccountRound,
+  TAccountLpVault,
+  TAccountUsdcMint,
+  TAccountPrizeVault,
+  TAccountPrizeVaultAuthority,
+  TAccountLpPrincipal,
+  TAccountLpAuthority,
+  TAccountTokenProgram
 > {
   // Program address.
   const programAddress = config?.programAddress ?? LOTTERY_PROGRAM_ADDRESS;
@@ -189,11 +354,27 @@ export function getArchiveRoundInstruction<
     admin: { value: input.admin ?? null, isWritable: false },
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
+    lpVault: { value: input.lpVault ?? null, isWritable: true },
+    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    prizeVault: { value: input.prizeVault ?? null, isWritable: true },
+    prizeVaultAuthority: {
+      value: input.prizeVaultAuthority ?? null,
+      isWritable: false,
+    },
+    lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
+    lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
+    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
+
+  // Resolve default values.
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
@@ -201,6 +382,13 @@ export function getArchiveRoundInstruction<
       getAccountMeta(accounts.admin),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
+      getAccountMeta(accounts.lpVault),
+      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.prizeVault),
+      getAccountMeta(accounts.prizeVaultAuthority),
+      getAccountMeta(accounts.lpPrincipal),
+      getAccountMeta(accounts.lpAuthority),
+      getAccountMeta(accounts.tokenProgram),
     ],
     data: getArchiveRoundInstructionDataEncoder().encode({}),
     programAddress,
@@ -208,7 +396,14 @@ export function getArchiveRoundInstruction<
     TProgramAddress,
     TAccountAdmin,
     TAccountConfig,
-    TAccountRound
+    TAccountRound,
+    TAccountLpVault,
+    TAccountUsdcMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
   >);
 }
 
@@ -221,6 +416,13 @@ export type ParsedArchiveRoundInstruction<
     admin: TAccountMetas[0];
     config: TAccountMetas[1];
     round: TAccountMetas[2];
+    lpVault: TAccountMetas[3];
+    usdcMint: TAccountMetas[4];
+    prizeVault: TAccountMetas[5];
+    prizeVaultAuthority: TAccountMetas[6];
+    lpPrincipal: TAccountMetas[7];
+    lpAuthority: TAccountMetas[8];
+    tokenProgram: TAccountMetas[9];
   };
   data: ArchiveRoundInstructionData;
 };
@@ -233,7 +435,7 @@ export function parseArchiveRoundInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedArchiveRoundInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+  if (instruction.accounts.length < 10) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -249,6 +451,13 @@ export function parseArchiveRoundInstruction<
       admin: getNextAccount(),
       config: getNextAccount(),
       round: getNextAccount(),
+      lpVault: getNextAccount(),
+      usdcMint: getNextAccount(),
+      prizeVault: getNextAccount(),
+      prizeVaultAuthority: getNextAccount(),
+      lpPrincipal: getNextAccount(),
+      lpAuthority: getNextAccount(),
+      tokenProgram: getNextAccount(),
     },
     data: getArchiveRoundInstructionDataDecoder().decode(instruction.data),
   };

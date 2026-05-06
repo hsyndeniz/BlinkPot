@@ -27,8 +27,6 @@ import {
   getI64Encoder,
   getStructDecoder,
   getStructEncoder,
-  getU16Decoder,
-  getU16Encoder,
   getU32Decoder,
   getU32Encoder,
   getU64Decoder,
@@ -84,29 +82,27 @@ export type Round = {
   prizePool: bigint;
   lpEdgeAccrued: bigint;
   referralFeesAccrued: bigint;
-  tierWinnerCounts: Array<number>;
-  tierPoolAmounts: Array<bigint>;
-  tierPaidCounts: Array<number>;
-  tierPaidAmounts: Array<bigint>;
-  tallyDone: boolean;
-  usedMinimumPayouts: boolean;
-  minPayoutsTotal: bigint;
-  premiumPayoutsTotal: bigint;
-  rolledToLp: bigint;
-  rolledToNextRound: bigint;
   /** Prize pool seeded from the previous round's rollover (set at start_round time). */
   seedPrizePool: bigint;
-  ticketPrizePool: bigint;
   lpGuaranteeReserved: bigint;
-  lpLossReserved: bigint;
-  playerFundedPrizes: bigint;
   /**
-   * Snapshot of tier weights and minimums at round start. Mid-round config changes
-   * don't affect rounds already in flight.
+   * Fixed payout (USDC base units) per winning ticket for each tier.
+   * Computed at reveal_draw time as `min_payout[t] + premium_pool[t] / combos[t]`.
+   * Zero for non-winning tiers.
    */
-  tierPremiumWeightBps: Array<number>;
-  tierMinPayoutPerWinner: Array<bigint>;
-  premiumMinAllocationBps: number;
+  payoutPerWinner: Array<bigint>;
+  /** Snapshot of `Config.tier_is_winning` taken at start_round. */
+  tierIsWinning: Array<boolean>;
+  /**
+   * True when reveal_draw applied guaranteed minimums; false when minimums were
+   * skipped because they would have consumed the premium floor.
+   */
+  usedMinimumPayouts: boolean;
+  tierPaidCounts: Array<number>;
+  tierPaidAmounts: Array<bigint>;
+  /** Filled in by archive_round. */
+  rolledToLp: bigint;
+  rolledToNextRound: bigint;
 };
 
 export type RoundArgs = {
@@ -129,29 +125,27 @@ export type RoundArgs = {
   prizePool: number | bigint;
   lpEdgeAccrued: number | bigint;
   referralFeesAccrued: number | bigint;
-  tierWinnerCounts: Array<number>;
-  tierPoolAmounts: Array<number | bigint>;
-  tierPaidCounts: Array<number>;
-  tierPaidAmounts: Array<number | bigint>;
-  tallyDone: boolean;
-  usedMinimumPayouts: boolean;
-  minPayoutsTotal: number | bigint;
-  premiumPayoutsTotal: number | bigint;
-  rolledToLp: number | bigint;
-  rolledToNextRound: number | bigint;
   /** Prize pool seeded from the previous round's rollover (set at start_round time). */
   seedPrizePool: number | bigint;
-  ticketPrizePool: number | bigint;
   lpGuaranteeReserved: number | bigint;
-  lpLossReserved: number | bigint;
-  playerFundedPrizes: number | bigint;
   /**
-   * Snapshot of tier weights and minimums at round start. Mid-round config changes
-   * don't affect rounds already in flight.
+   * Fixed payout (USDC base units) per winning ticket for each tier.
+   * Computed at reveal_draw time as `min_payout[t] + premium_pool[t] / combos[t]`.
+   * Zero for non-winning tiers.
    */
-  tierPremiumWeightBps: Array<number>;
-  tierMinPayoutPerWinner: Array<number | bigint>;
-  premiumMinAllocationBps: number;
+  payoutPerWinner: Array<number | bigint>;
+  /** Snapshot of `Config.tier_is_winning` taken at start_round. */
+  tierIsWinning: Array<boolean>;
+  /**
+   * True when reveal_draw applied guaranteed minimums; false when minimums were
+   * skipped because they would have consumed the premium floor.
+   */
+  usedMinimumPayouts: boolean;
+  tierPaidCounts: Array<number>;
+  tierPaidAmounts: Array<number | bigint>;
+  /** Filled in by archive_round. */
+  rolledToLp: number | bigint;
+  rolledToNextRound: number | bigint;
 };
 
 /** Gets the encoder for {@link RoundArgs} account data. */
@@ -178,27 +172,15 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
       ["prizePool", getU64Encoder()],
       ["lpEdgeAccrued", getU64Encoder()],
       ["referralFeesAccrued", getU64Encoder()],
-      ["tierWinnerCounts", getArrayEncoder(getU32Encoder(), { size: 12 })],
-      ["tierPoolAmounts", getArrayEncoder(getU64Encoder(), { size: 12 })],
+      ["seedPrizePool", getU64Encoder()],
+      ["lpGuaranteeReserved", getU64Encoder()],
+      ["payoutPerWinner", getArrayEncoder(getU64Encoder(), { size: 12 })],
+      ["tierIsWinning", getArrayEncoder(getBooleanEncoder(), { size: 12 })],
+      ["usedMinimumPayouts", getBooleanEncoder()],
       ["tierPaidCounts", getArrayEncoder(getU32Encoder(), { size: 12 })],
       ["tierPaidAmounts", getArrayEncoder(getU64Encoder(), { size: 12 })],
-      ["tallyDone", getBooleanEncoder()],
-      ["usedMinimumPayouts", getBooleanEncoder()],
-      ["minPayoutsTotal", getU64Encoder()],
-      ["premiumPayoutsTotal", getU64Encoder()],
       ["rolledToLp", getU64Encoder()],
       ["rolledToNextRound", getU64Encoder()],
-      ["seedPrizePool", getU64Encoder()],
-      ["ticketPrizePool", getU64Encoder()],
-      ["lpGuaranteeReserved", getU64Encoder()],
-      ["lpLossReserved", getU64Encoder()],
-      ["playerFundedPrizes", getU64Encoder()],
-      ["tierPremiumWeightBps", getArrayEncoder(getU16Encoder(), { size: 12 })],
-      [
-        "tierMinPayoutPerWinner",
-        getArrayEncoder(getU64Encoder(), { size: 12 }),
-      ],
-      ["premiumMinAllocationBps", getU16Encoder()],
     ]),
     (value) => ({ ...value, discriminator: ROUND_DISCRIMINATOR }),
   );
@@ -227,24 +209,15 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
     ["prizePool", getU64Decoder()],
     ["lpEdgeAccrued", getU64Decoder()],
     ["referralFeesAccrued", getU64Decoder()],
-    ["tierWinnerCounts", getArrayDecoder(getU32Decoder(), { size: 12 })],
-    ["tierPoolAmounts", getArrayDecoder(getU64Decoder(), { size: 12 })],
+    ["seedPrizePool", getU64Decoder()],
+    ["lpGuaranteeReserved", getU64Decoder()],
+    ["payoutPerWinner", getArrayDecoder(getU64Decoder(), { size: 12 })],
+    ["tierIsWinning", getArrayDecoder(getBooleanDecoder(), { size: 12 })],
+    ["usedMinimumPayouts", getBooleanDecoder()],
     ["tierPaidCounts", getArrayDecoder(getU32Decoder(), { size: 12 })],
     ["tierPaidAmounts", getArrayDecoder(getU64Decoder(), { size: 12 })],
-    ["tallyDone", getBooleanDecoder()],
-    ["usedMinimumPayouts", getBooleanDecoder()],
-    ["minPayoutsTotal", getU64Decoder()],
-    ["premiumPayoutsTotal", getU64Decoder()],
     ["rolledToLp", getU64Decoder()],
     ["rolledToNextRound", getU64Decoder()],
-    ["seedPrizePool", getU64Decoder()],
-    ["ticketPrizePool", getU64Decoder()],
-    ["lpGuaranteeReserved", getU64Decoder()],
-    ["lpLossReserved", getU64Decoder()],
-    ["playerFundedPrizes", getU64Decoder()],
-    ["tierPremiumWeightBps", getArrayDecoder(getU16Decoder(), { size: 12 })],
-    ["tierMinPayoutPerWinner", getArrayDecoder(getU64Decoder(), { size: 12 })],
-    ["premiumMinAllocationBps", getU16Decoder()],
   ]);
 }
 
@@ -307,5 +280,5 @@ export async function fetchAllMaybeRound(
 }
 
 export function getRoundSize(): number {
-  return 630;
+  return 431;
 }

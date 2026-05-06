@@ -6,7 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./compoundState";
 export * from "./config";
 export * from "./lpAuthority";
 export * from "./lpPrincipal";

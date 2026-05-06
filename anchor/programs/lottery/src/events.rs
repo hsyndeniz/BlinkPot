@@ -60,18 +60,7 @@ pub struct DrawSettled {
     pub round_id: u64,
     pub winning_normals: [u8; 5],
     pub winning_bonusball: u8,
-}
-
-#[event]
-pub struct RoundTallied {
-    pub round_id: u64,
-    pub tier_winner_counts: [u32; 12],
-    pub tier_pool_amounts: [u64; 12],
-    pub rolled_to_lp: u64,
-    pub rolled_to_next_round: u64,
-    pub lp_loss_reserved: u64,
-    pub tickets_processed: u32,
-    pub finalized: bool,
+    pub payout_per_winner: [u64; 12],
     pub used_minimum_payouts: bool,
 }
 
@@ -167,15 +156,6 @@ pub struct EmergencyLpWithdrawn {
 #[event]
 pub struct RoundArchived {
     pub round_id: u64,
-}
-
-#[event]
-pub struct Compounded {
-    pub user: Pubkey,
-    pub round_id: u64,
-    pub tickets_claimed: u32,
-    pub usdc_claimed: u64,
-    pub tickets_bought: u32,
-    pub usdc_spent: u64,
-    pub usdc_remaining: u64,
+    pub rolled_to_lp: u64,
+    pub rolled_to_next_round: u64,
 }

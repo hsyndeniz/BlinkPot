@@ -327,9 +327,7 @@ pub fn buy_tickets<'info>(
             price_paid: ticket_price,
             normals: pick.normals,
             bonusball: pick.bonusball,
-            tallied: false,
             claimed: false,
-            tier: 0,
             bump,
         };
 
@@ -424,10 +422,6 @@ pub fn buy_tickets<'info>(
     let round = &mut ctx.accounts.round;
     round.prize_pool = round
         .prize_pool
-        .checked_add(ticket_prize_contribution)
-        .ok_or(error!(LotteryError::MathOverflow))?;
-    round.ticket_prize_pool = round
-        .ticket_prize_pool
         .checked_add(ticket_prize_contribution)
         .ok_or(error!(LotteryError::MathOverflow))?;
     round.lp_edge_accrued = round

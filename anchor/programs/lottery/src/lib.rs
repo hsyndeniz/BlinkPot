@@ -14,7 +14,7 @@ use instructions::*;
 use state::config::ConfigParams;
 use state::ticket::TicketPick;
 
-declare_id!("348H4GCNY1nAp1bUoG2rAZFkEXwiw5zW4aXLC5dvVN7c");
+declare_id!("7SNC2rgJAub4GnjNG8VBMHZYqSXaA7h4239JW992hxax");
 
 #[program]
 pub mod lottery {
@@ -72,23 +72,8 @@ pub mod lottery {
         instructions::draw::reveal_draw(ctx)
     }
 
-    pub fn tally_round<'info>(
-        ctx: Context<'_, '_, 'info, 'info, TallyRound<'info>>,
-        finalize: bool,
-    ) -> Result<()> {
-        instructions::claim::tally_round(ctx, finalize)
-    }
-
     pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
         instructions::claim::claim_winnings(ctx)
-    }
-
-    pub fn compound_winnings<'info>(
-        ctx: Context<'_, '_, 'info, 'info, CompoundWinnings<'info>>,
-        picks: Vec<TicketPick>,
-        referrer: Option<Pubkey>,
-    ) -> Result<()> {
-        instructions::compound::compound_winnings(ctx, picks, referrer)
     }
 
     pub fn lp_deposit(ctx: Context<LpDeposit>, amount: u64) -> Result<()> {

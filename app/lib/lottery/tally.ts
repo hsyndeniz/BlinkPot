@@ -53,6 +53,6 @@ export function isWinningTicket(round: Round, ticket: Ticket) {
     matches,
     hasBonusball,
     tier,
-    winning: tier > 0,
+    winning: round.tierIsWinning?.[tier] === true,
   };
 }

@@ -5,7 +5,7 @@ use crate::constants::{
     BPS_DENOM, CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
     MAX_BONUSBALL_MAX, MAX_GUARANTEE_PER_ROUND_BPS_CAP, MAX_ROUND_DURATION_SECS, MIN_BONUSBALL_MAX,
     MIN_PRIZE_POOL_BPS, MIN_ROUND_DURATION_SECS, NORMAL_BALL_COUNT, PRIZE_VAULT_AUTHORITY_SEED,
-    PRIZE_VAULT_TOKEN_SEED, ROUND_COUNTER_SEED,
+    PRIZE_VAULT_TOKEN_SEED, ROUND_COUNTER_SEED, TIER_COUNT,
 };
 use crate::errors::LotteryError;
 use crate::events::{ConfigInitialized, ConfigUpdated, EmergencyModeToggled, PausedToggled};
@@ -85,28 +85,28 @@ pub(crate) fn validate_params(params: &ConfigParams) -> Result<()> {
         LotteryError::InvalidPremiumAllocation
     );
 
-    validate_tier_weight_bps(&params.tier_premium_weight_bps)?;
+    validate_tier_weight_bps(&params.tier_premium_weight_bps, &params.tier_is_winning)?;
+
+    // Non-winning tiers must not carry guaranteed minimums either — those would never
+    // be claimable.
+    for t in 0..TIER_COUNT {
+        if !params.tier_is_winning[t] {
+            require!(
+                params.tier_min_payout_per_winner[t] == 0,
+                LotteryError::InvalidTierWeightBps
+            );
+        }
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::TIER_COUNT;
+    use crate::constants::{MEGAPOT_TIER_IS_WINNING, MEGAPOT_TIER_PREMIUM_WEIGHT_BPS};
     use crate::state::config::UntakenTierDestination;
 
     fn valid_params() -> ConfigParams {
-        let mut tier_premium_weight_bps = [0u16; TIER_COUNT];
-        // Megapot-aligned default weights summing to 10000.
-        tier_premium_weight_bps[3] = 1_200;
-        tier_premium_weight_bps[5] = 1_200;
-        tier_premium_weight_bps[6] = 1_200;
-        tier_premium_weight_bps[7] = 600;
-        tier_premium_weight_bps[8] = 600;
-        tier_premium_weight_bps[9] = 600;
-        tier_premium_weight_bps[10] = 600;
-        tier_premium_weight_bps[11] = 4_000;
-
         ConfigParams {
             default_ticket_price: 1_000_000,
             default_round_duration_secs: MIN_ROUND_DURATION_SECS,
@@ -121,8 +121,9 @@ mod tests {
             referral_win_share_first_bps: 800,
             referral_win_share_second_bps: 200,
             lp_pool_cap: 0,
-            tier_premium_weight_bps,
+            tier_premium_weight_bps: MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
             tier_min_payout_per_winner: [0u64; TIER_COUNT],
+            tier_is_winning: MEGAPOT_TIER_IS_WINNING,
             premium_min_allocation_bps: 2_000,
             untaken_tier_destination: UntakenTierDestination::NextRound,
             dynamic_bonusball_enabled: true,
@@ -158,6 +159,14 @@ mod tests {
         let mut params = valid_params();
         params.tier_premium_weight_bps = [0u16; TIER_COUNT];
         params.tier_premium_weight_bps[11] = 9_000;
+        assert!(validate_params(&params).is_err());
+    }
+
+    #[test]
+    fn rejects_minimums_on_non_winning_tier() {
+        let mut params = valid_params();
+        // tier 0 is non-winning by Megapot defaults — shouldn't carry a minimum
+        params.tier_min_payout_per_winner[0] = 1_000_000;
         assert!(validate_params(&params).is_err());
     }
 }

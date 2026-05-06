@@ -16,6 +16,7 @@ import type {
   Address,
   Instruction,
   MaybeAccount,
+  ReadonlyUint8Array,
   TransactionSigner,
 } from "@solana/kit";
 import { useCluster } from "../../components/cluster-context";
@@ -45,6 +46,26 @@ export async function getCreateAtaInstruction(input: {
     mint: input.mint,
     tokenProgram: TOKEN_PROGRAM_ADDRESS,
   });
+}
+
+export async function getTransferInstruction(input: {
+  source: Address;
+  destination: Address;
+  owner: TransactionSigner;
+  amount: bigint;
+}): Promise<Instruction> {
+  return {
+    programAddress: TOKEN_PROGRAM_ADDRESS,
+    accounts: [
+      { address: input.source, role: 2 }, // source (writable)
+      { address: input.destination, role: 2 }, // destination (writable)
+      { address: input.owner.address, role: 1 }, // owner/authority (signer)
+    ],
+    data: new Uint8Array([
+      3, // Transfer instruction discriminator
+      ...new Uint8Array(new BigUint64Array([input.amount]).buffer),
+    ]) as ReadonlyUint8Array,
+  };
 }
 
 export function parseTokenAmount(value: string, decimals: number): bigint {

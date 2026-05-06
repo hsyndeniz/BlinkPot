@@ -34,12 +34,6 @@ pub enum LotteryError {
     DrawTimeNotReached,
     #[msg("Round is not awaiting reveal")]
     RoundNotDrawing,
-    #[msg("Round is not in Settled state")]
-    RoundNotSettled,
-    #[msg("Round has already been tallied")]
-    RoundAlreadyTallied,
-    #[msg("Round has not been tallied yet")]
-    RoundNotTallied,
     #[msg("Round is not in Claimable or Archived state")]
     RoundNotClaimable,
     #[msg("Round is not yet ready to be archived")]

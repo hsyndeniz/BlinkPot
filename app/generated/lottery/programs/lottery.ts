@@ -23,7 +23,6 @@ import {
   parseClaimReferralFeesInstruction,
   parseClaimWinningsInstruction,
   parseCommitDrawInstruction,
-  parseCompoundWinningsInstruction,
   parseEmergencyLpWithdrawInstruction,
   parseEmergencyRefundTicketInstruction,
   parseEnterRoundEmergencyInstruction,
@@ -38,7 +37,6 @@ import {
   parseSetPausedInstruction,
   parseStartRoundInstruction,
   parseSubscribeDailyInstruction,
-  parseTallyRoundInstruction,
   parseUpdateConfigInstruction,
   type ParsedArchiveRoundInstruction,
   type ParsedBuyTicketsInstruction,
@@ -46,7 +44,6 @@ import {
   type ParsedClaimReferralFeesInstruction,
   type ParsedClaimWinningsInstruction,
   type ParsedCommitDrawInstruction,
-  type ParsedCompoundWinningsInstruction,
   type ParsedEmergencyLpWithdrawInstruction,
   type ParsedEmergencyRefundTicketInstruction,
   type ParsedEnterRoundEmergencyInstruction,
@@ -61,16 +58,14 @@ import {
   type ParsedSetPausedInstruction,
   type ParsedStartRoundInstruction,
   type ParsedSubscribeDailyInstruction,
-  type ParsedTallyRoundInstruction,
   type ParsedUpdateConfigInstruction,
 } from "../instructions";
 
 export const LOTTERY_PROGRAM_ADDRESS =
-  "348H4GCNY1nAp1bUoG2rAZFkEXwiw5zW4aXLC5dvVN7c" as Address<"348H4GCNY1nAp1bUoG2rAZFkEXwiw5zW4aXLC5dvVN7c">;
+  "7SNC2rgJAub4GnjNG8VBMHZYqSXaA7h4239JW992hxax" as Address<"7SNC2rgJAub4GnjNG8VBMHZYqSXaA7h4239JW992hxax">;
 
 export enum LotteryAccount {
   BuyerEntry,
-  CompoundState,
   Config,
   LpPosition,
   LpVault,
@@ -95,17 +90,6 @@ export function identifyLotteryAccount(
     )
   ) {
     return LotteryAccount.BuyerEntry;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([216, 68, 127, 186, 34, 162, 238, 155]),
-      ),
-      0,
-    )
-  ) {
-    return LotteryAccount.CompoundState;
   }
   if (
     containsBytes(
@@ -207,7 +191,6 @@ export enum LotteryInstruction {
   ClaimReferralFees,
   ClaimWinnings,
   CommitDraw,
-  CompoundWinnings,
   EmergencyLpWithdraw,
   EmergencyRefundTicket,
   EnterRoundEmergency,
@@ -222,7 +205,6 @@ export enum LotteryInstruction {
   SetPaused,
   StartRound,
   SubscribeDaily,
-  TallyRound,
   UpdateConfig,
 }
 
@@ -295,17 +277,6 @@ export function identifyLotteryInstruction(
     )
   ) {
     return LotteryInstruction.CommitDraw;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([119, 96, 183, 91, 122, 112, 45, 56]),
-      ),
-      0,
-    )
-  ) {
-    return LotteryInstruction.CompoundWinnings;
   }
   if (
     containsBytes(
@@ -465,17 +436,6 @@ export function identifyLotteryInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([176, 99, 204, 229, 229, 240, 167, 240]),
-      ),
-      0,
-    )
-  ) {
-    return LotteryInstruction.TallyRound;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([29, 158, 252, 191, 10, 83, 219, 99]),
       ),
       0,
@@ -489,7 +449,7 @@ export function identifyLotteryInstruction(
 }
 
 export type ParsedLotteryInstruction<
-  TProgram extends string = "348H4GCNY1nAp1bUoG2rAZFkEXwiw5zW4aXLC5dvVN7c",
+  TProgram extends string = "7SNC2rgJAub4GnjNG8VBMHZYqSXaA7h4239JW992hxax",
 > =
   | ({
       instructionType: LotteryInstruction.ArchiveRound;
@@ -509,9 +469,6 @@ export type ParsedLotteryInstruction<
   | ({
       instructionType: LotteryInstruction.CommitDraw;
     } & ParsedCommitDrawInstruction<TProgram>)
-  | ({
-      instructionType: LotteryInstruction.CompoundWinnings;
-    } & ParsedCompoundWinningsInstruction<TProgram>)
   | ({
       instructionType: LotteryInstruction.EmergencyLpWithdraw;
     } & ParsedEmergencyLpWithdrawInstruction<TProgram>)
@@ -554,9 +511,6 @@ export type ParsedLotteryInstruction<
   | ({
       instructionType: LotteryInstruction.SubscribeDaily;
     } & ParsedSubscribeDailyInstruction<TProgram>)
-  | ({
-      instructionType: LotteryInstruction.TallyRound;
-    } & ParsedTallyRoundInstruction<TProgram>)
   | ({
       instructionType: LotteryInstruction.UpdateConfig;
     } & ParsedUpdateConfigInstruction<TProgram>);
@@ -606,13 +560,6 @@ export function parseLotteryInstruction<TProgram extends string>(
       return {
         instructionType: LotteryInstruction.CommitDraw,
         ...parseCommitDrawInstruction(instruction),
-      };
-    }
-    case LotteryInstruction.CompoundWinnings: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: LotteryInstruction.CompoundWinnings,
-        ...parseCompoundWinningsInstruction(instruction),
       };
     }
     case LotteryInstruction.EmergencyLpWithdraw: {
@@ -711,13 +658,6 @@ export function parseLotteryInstruction<TProgram extends string>(
       return {
         instructionType: LotteryInstruction.SubscribeDaily,
         ...parseSubscribeDailyInstruction(instruction),
-      };
-    }
-    case LotteryInstruction.TallyRound: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: LotteryInstruction.TallyRound,
-        ...parseTallyRoundInstruction(instruction),
       };
     }
     case LotteryInstruction.UpdateConfig: {

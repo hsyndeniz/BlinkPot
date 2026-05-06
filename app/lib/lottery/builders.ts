@@ -10,17 +10,10 @@ import {
 } from "@solana/kit";
 import {
   getBuyTicketsInstructionAsync,
-  getCompoundWinningsInstructionAsync,
   getProcessSubscriptionInstructionAsync,
-  getTallyRoundInstructionAsync,
   type TicketPickArgs,
 } from "../../generated/lottery";
-import {
-  findBuyerEntryPda,
-  findCompoundStatePda,
-  findTicketPda,
-  pdaAddress,
-} from "./addresses";
+import { findBuyerEntryPda, findTicketPda, pdaAddress } from "./addresses";
 
 type InstructionWithAccountList = Instruction &
   InstructionWithAccounts<readonly AccountMeta[]>;
@@ -140,90 +133,5 @@ export async function buildProcessSubscriptionInstruction(input: {
     instruction: appendRemainingAccounts(instruction, ticketPdas.map(writable)),
     buyerEntry,
     ticketPdas,
-  };
-}
-
-/**
- * Build a `tally_round` instruction. Pass `winningTicketAddresses` as the
- * tickets to score; set `finalize: true` on the LAST chunk of a multi-tx
- * tally to compute pool amounts and transition the round to Claimable.
- */
-export async function buildTallyRoundInstruction(input: {
-  trigger: TransactionSigner;
-  round: Address;
-  usdcMint: Address;
-  winningTicketAddresses: Address[];
-  finalize: boolean;
-}) {
-  const instruction = await getTallyRoundInstructionAsync({
-    trigger: input.trigger,
-    round: input.round,
-    usdcMint: input.usdcMint,
-    finalize: input.finalize,
-  });
-  return appendRemainingAccounts(
-    instruction,
-    input.winningTicketAddresses.map(writable)
-  );
-}
-
-/**
- * Build a `compound_winnings` instruction. `winningTicketAddresses` are
- * Ticket PDAs from a previously-claimable round whose payouts will be
- * re-invested into `picks.length` new tickets in the currently-open round.
- *
- * Order in remaining_accounts: winning tickets FIRST, new ticket PDAs LAST.
- */
-export async function buildCompoundWinningsInstruction(input: {
-  buyer: TransactionSigner;
-  round: Address;
-  roundId: bigint;
-  sourceRound: Address;
-  usdcMint: Address;
-  picks: TicketPickArgs[];
-  firstTicketIndex: bigint;
-  winningTicketAddresses: Address[];
-  referrer?: Address;
-  referrerAccount?: Address;
-  parentReferrerAccount?: Address;
-}) {
-  const buyerEntry = pdaAddress(
-    await findBuyerEntryPda({
-      roundId: input.roundId,
-      buyer: input.buyer.address,
-    })
-  );
-  const compoundState = pdaAddress(
-    await findCompoundStatePda({ buyer: input.buyer.address })
-  );
-  const newTicketPdas = await deriveTicketPdas({
-    roundId: input.roundId,
-    owner: input.buyer.address,
-    firstTicketIndex: input.firstTicketIndex,
-    count: input.picks.length,
-  });
-  const instruction = await getCompoundWinningsInstructionAsync({
-    buyer: input.buyer,
-    round: input.round,
-    sourceRound: input.sourceRound,
-    usdcMint: input.usdcMint,
-    buyerEntry,
-    compoundState,
-    referrerAccount: input.referrerAccount,
-    parentReferrerAccount: input.parentReferrerAccount,
-    picks: input.picks,
-    referrer: input.referrer ?? null,
-  });
-
-  // remaining_accounts: winning tickets first, then new ticket PDAs.
-  const remaining = [
-    ...input.winningTicketAddresses.map(writable),
-    ...newTicketPdas.map(writable),
-  ];
-  return {
-    instruction: appendRemainingAccounts(instruction, remaining),
-    buyerEntry,
-    compoundState,
-    newTicketPdas,
   };
 }

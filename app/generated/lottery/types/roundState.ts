@@ -18,7 +18,6 @@ import {
 export enum RoundState {
   Open,
   Drawing,
-  Settled,
   Claimable,
   Archived,
   Emergency,
