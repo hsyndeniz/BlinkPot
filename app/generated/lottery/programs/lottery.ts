@@ -62,7 +62,7 @@ import {
 } from "../instructions";
 
 export const LOTTERY_PROGRAM_ADDRESS =
-  "7SNC2rgJAub4GnjNG8VBMHZYqSXaA7h4239JW992hxax" as Address<"7SNC2rgJAub4GnjNG8VBMHZYqSXaA7h4239JW992hxax">;
+  "5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r" as Address<"5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r">;
 
 export enum LotteryAccount {
   BuyerEntry,
@@ -461,7 +461,7 @@ export function identifyLotteryInstruction(
 }
 
 export type ParsedLotteryInstruction<
-  TProgram extends string = "7SNC2rgJAub4GnjNG8VBMHZYqSXaA7h4239JW992hxax",
+  TProgram extends string = "5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r",
 > =
   | ({
       instructionType: LotteryInstruction.ArchiveRound;

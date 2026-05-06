@@ -14,7 +14,7 @@ use instructions::*;
 use state::config::ConfigParams;
 use state::ticket::TicketPick;
 
-declare_id!("7SNC2rgJAub4GnjNG8VBMHZYqSXaA7h4239JW992hxax");
+declare_id!("5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r");
 
 #[program]
 pub mod lottery {
