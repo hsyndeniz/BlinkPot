@@ -2,19 +2,20 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
-    CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED, MAX_BONUSBALL_MAX,
-    MAX_ROUND_DURATION_SECS, MIN_BONUSBALL_MAX, MIN_ROUND_DURATION_SECS, NORMAL_BALL_COUNT,
-    PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED, ROUND_COUNTER_SEED, ROUND_SEED,
+    BPS_DENOM, CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
+    MAX_BONUSBALL_MAX, MAX_ROUND_DURATION_SECS, MIN_BONUSBALL_MAX, MIN_ROUND_DURATION_SECS,
+    NORMAL_BALL_COUNT, PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED, ROUND_COUNTER_SEED,
+    ROUND_SEED, TIER_COUNT,
 };
 use crate::errors::LotteryError;
 use crate::events::{RoundArchived, RoundOpened};
-use crate::math::assets_for_shares;
+use crate::math::{assets_for_shares, bps_amount, compute_dynamic_bonusball};
 use crate::state::config::{Config, RoundCounter};
 use crate::state::lp::LpVault;
 use crate::state::round::{Round, RoundState};
 
 #[derive(Accounts)]
-#[instruction(ticket_price: u64, duration_seconds: i64, bonusball_max: u8)]
+#[instruction(ticket_price: u64, duration_seconds: i64, bonusball_max: u8, guaranteed_prize_pool_override: u64)]
 pub struct StartRound<'info> {
     #[account(mut)]
     pub starter: Signer<'info>,
@@ -82,6 +83,7 @@ pub fn start_round(
     ticket_price: u64,
     duration_seconds: i64,
     bonusball_max: u8,
+    guaranteed_prize_pool_override: u64,
 ) -> Result<()> {
     require!(!ctx.accounts.config.paused, LotteryError::Paused);
     require!(
@@ -92,10 +94,7 @@ pub fn start_round(
     let counter = &mut ctx.accounts.round_counter;
     let next_round_id = counter.current_round_id + 1;
 
-    // Rollover from the previous tallied round stays in the prize vault and seeds
-    // this round's player-funded prize accounting.
     let seed_prize_pool: u64;
-
     if counter.current_round_id > 0 {
         let prev_pda = Pubkey::find_program_address(
             &[ROUND_SEED, &counter.current_round_id.to_le_bytes()],
@@ -119,8 +118,25 @@ pub fn start_round(
         seed_prize_pool = 0;
     }
 
-    let guaranteed_prize_pool = ctx.accounts.config.guaranteed_prize_pool;
+    // Resolve guaranteed prize pool — caller may override; otherwise config default.
+    let guaranteed_prize_pool = if guaranteed_prize_pool_override > 0 {
+        guaranteed_prize_pool_override
+    } else {
+        ctx.accounts.config.guaranteed_prize_pool
+    };
+
     if guaranteed_prize_pool > 0 {
+        // Cap guarantee against LP NAV.
+        if ctx.accounts.config.max_guarantee_per_round_bps > 0 {
+            let cap = bps_amount(
+                ctx.accounts.lp_vault.total_assets,
+                ctx.accounts.config.max_guarantee_per_round_bps,
+            )?;
+            require!(
+                guaranteed_prize_pool <= cap,
+                LotteryError::GuaranteeExceedsCap
+            );
+        }
         let pending_assets = assets_for_shares(
             ctx.accounts.lp_vault.pending_withdraw_shares,
             ctx.accounts.lp_vault.total_shares,
@@ -176,10 +192,23 @@ pub fn start_round(
         LotteryError::InvalidRoundDuration
     );
 
-    let bonus_max = if bonusball_max == 0 {
-        ctx.accounts.config.bonusball_max
-    } else {
+    // Resolve bonusball_max.
+    // - If caller passes a non-zero value, that's an explicit override.
+    // - Else if dynamic_bonusball_enabled, compute from initial pool (seed + guarantee).
+    // - Else use config.bonusball_max as static default.
+    let initial_pool = seed_prize_pool
+        .checked_add(guaranteed_prize_pool)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    let bonus_max = if bonusball_max != 0 {
         bonusball_max
+    } else if ctx.accounts.config.dynamic_bonusball_enabled {
+        compute_dynamic_bonusball(
+            initial_pool,
+            ctx.accounts.config.bonusball_base,
+            ctx.accounts.config.bonusball_pool_step_usdc,
+        )
+    } else {
+        ctx.accounts.config.bonusball_max
     };
     require!(
         bonus_max >= MIN_BONUSBALL_MAX && bonus_max <= MAX_BONUSBALL_MAX,
@@ -198,24 +227,23 @@ pub fn start_round(
     round.draw_time = now.saturating_add(duration);
     round.commit_slot = 0;
     round.settled_at = 0;
-    round.register_deadline = 0;
     round.emergency_at = 0;
     round.randomness_account = Pubkey::default();
     round.winning_normals = [0u8; NORMAL_BALL_COUNT];
     round.winning_bonusball = 0;
     round.ticket_count = 0;
-    round.registered_count = 0;
     round.claimed_count = 0;
-    round.prize_pool = seed_prize_pool
-        .checked_add(guaranteed_prize_pool)
-        .ok_or(error!(LotteryError::MathOverflow))?;
+    round.prize_pool = initial_pool;
     round.lp_edge_accrued = 0;
     round.referral_fees_accrued = 0;
-    round.tier_winner_counts = [0u32; 12];
-    round.tier_pool_amounts = [0u64; 12];
-    round.tier_paid_counts = [0u32; 12];
-    round.tier_paid_amounts = [0u64; 12];
+    round.tier_winner_counts = [0u32; TIER_COUNT];
+    round.tier_pool_amounts = [0u64; TIER_COUNT];
+    round.tier_paid_counts = [0u32; TIER_COUNT];
+    round.tier_paid_amounts = [0u64; TIER_COUNT];
     round.tally_done = false;
+    round.used_minimum_payouts = false;
+    round.min_payouts_total = 0;
+    round.premium_payouts_total = 0;
     round.rolled_to_lp = 0;
     round.rolled_to_next_round = 0;
     round.seed_prize_pool = seed_prize_pool;
@@ -223,6 +251,11 @@ pub fn start_round(
     round.lp_guarantee_reserved = guaranteed_prize_pool;
     round.lp_loss_reserved = 0;
     round.player_funded_prizes = 0;
+
+    // Snapshot tier config so mid-round admin updates don't affect this round.
+    round.tier_premium_weight_bps = ctx.accounts.config.tier_premium_weight_bps;
+    round.tier_min_payout_per_winner = ctx.accounts.config.tier_min_payout_per_winner;
+    round.premium_min_allocation_bps = ctx.accounts.config.premium_min_allocation_bps;
 
     counter.current_round_id = next_round_id;
 
@@ -263,5 +296,6 @@ pub fn archive_round(ctx: Context<ArchiveRound>) -> Result<()> {
     emit!(RoundArchived {
         round_id: round.round_id
     });
+    let _ = BPS_DENOM;
     Ok(())
 }

@@ -13,14 +13,20 @@ pub enum LotteryError {
 
     #[msg("Invalid configuration parameters")]
     InvalidConfig,
-    #[msg("Tier payout basis points sum exceeds 10_000")]
-    InvalidTierPayoutBps,
+    #[msg("Tier weight basis points sum must equal 10_000")]
+    InvalidTierWeightBps,
+    #[msg("Prize pool BPS falls below the protocol minimum")]
+    PrizePoolBelowFloor,
+    #[msg("Premium minimum allocation is out of range")]
+    InvalidPremiumAllocation,
     #[msg("Round duration outside allowed range")]
     InvalidRoundDuration,
     #[msg("Bonusball max outside allowed range")]
     InvalidBonusballRange,
     #[msg("Ticket price must be positive")]
     InvalidTicketPrice,
+    #[msg("Per-round guarantee exceeds the configured NAV cap")]
+    GuaranteeExceedsCap,
 
     #[msg("Round is not in Open state")]
     RoundNotOpen,
@@ -30,8 +36,10 @@ pub enum LotteryError {
     RoundNotDrawing,
     #[msg("Round is not in Settled state")]
     RoundNotSettled,
-    #[msg("Not all tickets are registered yet")]
-    UnregisteredTicketsRemain,
+    #[msg("Round has already been tallied")]
+    RoundAlreadyTallied,
+    #[msg("Round has not been tallied yet")]
+    RoundNotTallied,
     #[msg("Round is not in Claimable or Archived state")]
     RoundNotClaimable,
     #[msg("Round is not yet ready to be archived")]
@@ -40,6 +48,8 @@ pub enum LotteryError {
     PreviousRoundUnsettled,
     #[msg("Round id mismatch")]
     RoundIdMismatch,
+    #[msg("No open round available for purchase")]
+    NoOpenRound,
 
     #[msg("Ticket numbers must be sorted ascending and unique")]
     InvalidTicketNumbers,
@@ -50,16 +60,14 @@ pub enum LotteryError {
     #[msg("Batch size out of range")]
     InvalidBatchSize,
 
-    #[msg("Ticket already registered")]
-    TicketAlreadyRegistered,
     #[msg("Ticket already claimed")]
     TicketAlreadyClaimed,
-    #[msg("Tier has no winners; tally first or nothing to claim")]
-    NoTierWinners,
-    #[msg("Tier has not been tallied yet")]
-    TierNotTallied,
     #[msg("Tickets in tier 0 are not winners")]
     NotAWinningTier,
+    #[msg("Tier has no winners")]
+    NoTierWinners,
+    #[msg("No winning tickets supplied")]
+    NoWinningTickets,
 
     #[msg("Switchboard randomness account mismatch")]
     InvalidRandomnessAccount,
@@ -97,6 +105,10 @@ pub enum LotteryError {
     SelfReferral,
     #[msg("Referral account is required")]
     ReferralRequired,
+    #[msg("Parent referrer cannot be the referrer themself")]
+    SelfParentReferrer,
+    #[msg("Parent referrer account does not match the referrer's stored parent")]
+    ParentReferrerMismatch,
 
     #[msg("Subscription is inactive or expired")]
     SubscriptionInactive,

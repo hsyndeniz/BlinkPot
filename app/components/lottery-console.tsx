@@ -28,13 +28,11 @@ import {
   getLpDepositInstructionAsync,
   getLpFinalizeWithdrawInstructionAsync,
   getLpInitiateWithdrawInstructionAsync,
-  getRegisterWinnerInstructionAsync,
   getRevealDrawInstructionAsync,
   getSetEmergencyModeInstructionAsync,
   getSetPausedInstructionAsync,
   getStartRoundInstructionAsync,
   getSubscribeDailyInstructionAsync,
-  getTallyTierPoolsInstructionAsync,
   getUpdateConfigInstructionAsync,
   type Config,
   type ConfigParamsArgs,
@@ -63,6 +61,7 @@ import {
 } from "../lib/lottery/addresses";
 import {
   useBuyerEntry,
+  useCompoundState,
   useConfig,
   useCurrentRound,
   useLpPosition,
@@ -86,10 +85,12 @@ import {
 } from "../lib/lottery/tokens";
 import {
   buildBuyTicketsInstruction,
+  buildCompoundWinningsInstruction,
   buildProcessSubscriptionInstruction,
-  buildRegisterWinnersBatchInstruction,
+  buildTallyRoundInstruction,
 } from "../lib/lottery/builders";
 import { useSendLotteryTransaction } from "../lib/lottery/transactions";
+import { countTicketMatches, isWinningTicket } from "../lib/lottery/tally";
 import {
   buildCreateRandomnessInstruction,
   buildSwitchboardCommitInstruction,
@@ -98,7 +99,7 @@ import {
 
 const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
 const TICKET_BATCH_LIMIT = 20;
-const REGISTER_BATCH_LIMIT = 20;
+const TALLY_PAGE_SIZE = 30;
 
 type TabId =
   | "overview"
@@ -113,32 +114,52 @@ type TabId =
 type ConfigForm = {
   defaultTicketPrice: string;
   defaultRoundDurationSecs: string;
-  registerWindowSecs: string;
   guaranteedPrizePool: string;
   drawTimeoutSlots: string;
   normalBallMax: string;
   bonusballMax: string;
   lpEdgeBps: string;
-  referralFeeBps: string;
-  referralWinShareBps: string;
+  referralFeeFirstBps: string; // 8%
+  referralFeeSecondBps: string; // 2%
+  referralWinShareFirstBps: string; // 8%
+  referralWinShareSecondBps: string; // 2%
+  tierMinPayoutPerWinner: string; // CSV of 12 values (USDC)
+  tierPremiumWeightBps: string; // CSV of 12 values (sum to 10000)
+  premiumMinAllocationBps: string; // 20% floor e.g. 2000
+  dynamicBonusballEnabled: boolean;
+  bonusballBase: string; // e.g. 5
+  bonusballPoolStepUsdc: string; // e.g. 10000
+  maxGuaranteePerRoundBps: string; // e.g. 3000 (30% NAV cap)
   lpPoolCap: string;
-  tierPayoutBps: string;
+  // tierPayoutBps removed (deprecated)
   untakenTierDestination: "nextRound" | "lpPool";
 };
 
 const defaultConfigForm: ConfigForm = {
   defaultTicketPrice: "1",
   defaultRoundDurationSecs: "86400",
-  registerWindowSecs: "0",
-  guaranteedPrizePool: "0",
+  guaranteedPrizePool: "1000", // $1k bootstrap
   drawTimeoutSlots: "10",
   normalBallMax: "30",
   bonusballMax: "15",
-  lpEdgeBps: "9000",
-  referralFeeBps: "800",
-  referralWinShareBps: "800",
+  lpEdgeBps: "2000", // 20% (was 9000)
+  referralFeeFirstBps: "800", // 8%
+  referralFeeSecondBps: "200", // 2%
+  referralWinShareFirstBps: "800", // 8%
+  referralWinShareSecondBps: "200", // 2%
+  // Tier payouts: Megapot-aligned with free tickets for retention
+  // Non-winning tiers (Tier 0, Tier 2 / 1 normal only): $0
+  // Free ticket tiers (Tier 1 bonusball, Tier 4 2-normals): $1
+  // Small payout tiers (Tier 3 1N+B): $2
+  tierMinPayoutPerWinner: "0,1,0,2,1,2,5,10,25,50,100,0",
+  tierPremiumWeightBps: "0,0,0,1200,0,1200,1200,600,600,600,600,4000",
+  premiumMinAllocationBps: "2000", // 20%
+  dynamicBonusballEnabled: true,
+  bonusballBase: "5",
+  bonusballPoolStepUsdc: "10000", // $10k step
+  maxGuaranteePerRoundBps: "3000", // 30% cap
   lpPoolCap: "0",
-  tierPayoutBps: "0,500,0,0,0,0,0,0,0,0,0,7000",
+  // tierPayoutBps default removed
   untakenTierDestination: "nextRound",
 };
 
@@ -205,11 +226,45 @@ function ticketPayoutEstimate(
   return round.tierPoolAmounts[ticket.tier] / winnerCount;
 }
 
-function configToForm(config: Config, decimals: number): ConfigForm {
+function usdcAmountToLpShares(
+  amount: bigint,
+  totalAssets?: bigint,
+  totalShares?: bigint
+): bigint {
+  if (amount <= 0n) return 0n;
+  if (
+    !totalAssets ||
+    !totalShares ||
+    totalAssets === 0n ||
+    totalShares === 0n
+  ) {
+    throw new Error("LP vault is not ready for withdrawals yet.");
+  }
+  return (amount * totalShares) / totalAssets;
+}
+
+// Extended config type that includes fields added by the Megapot refactor.
+// The Codama-generated Config type will gain these once the IDL is regenerated
+// from the updated Anchor program; until then we widen via intersection.
+type ExtendedConfig = Config & {
+  referralFeeFirstBps?: number;
+  referralFeeSecondBps?: number;
+  referralWinShareFirstBps?: number;
+  referralWinShareSecondBps?: number;
+  tierMinPayoutPerWinner?: bigint[];
+  tierPremiumWeightBps?: number[];
+  premiumMinAllocationBps?: number;
+  dynamicBonusballEnabled?: boolean;
+  bonusballBase?: number;
+  bonusballPoolStepUsdc?: bigint;
+  maxGuaranteePerRoundBps?: number;
+};
+
+function configToForm(rawConfig: Config, decimals: number): ConfigForm {
+  const config = rawConfig as ExtendedConfig;
   return {
     defaultTicketPrice: formatTokenAmount(config.defaultTicketPrice, decimals),
     defaultRoundDurationSecs: config.defaultRoundDurationSecs.toString(),
-    registerWindowSecs: config.registerWindowSecs.toString(),
     guaranteedPrizePool: formatTokenAmount(
       config.guaranteedPrizePool,
       decimals
@@ -218,10 +273,32 @@ function configToForm(config: Config, decimals: number): ConfigForm {
     normalBallMax: config.normalBallMax.toString(),
     bonusballMax: config.bonusballMax.toString(),
     lpEdgeBps: config.lpEdgeBps.toString(),
-    referralFeeBps: config.referralFeeBps.toString(),
-    referralWinShareBps: config.referralWinShareBps.toString(),
+    referralFeeFirstBps: config.referralFeeFirstBps?.toString() ?? "800",
+    referralFeeSecondBps: config.referralFeeSecondBps?.toString() ?? "200",
+    referralWinShareFirstBps:
+      config.referralWinShareFirstBps?.toString() ?? "800",
+    referralWinShareSecondBps:
+      config.referralWinShareSecondBps?.toString() ?? "200",
+    tierMinPayoutPerWinner: config.tierMinPayoutPerWinner
+      ? config.tierMinPayoutPerWinner
+          .map((v) => formatTokenAmount(v, decimals))
+          .join(",")
+      : "0,0,0,0.5,0,1,2,5,10,25,100,0",
+    tierPremiumWeightBps:
+      config.tierPremiumWeightBps?.join(",") ??
+      "0,0,0,1200,0,1200,1200,600,600,600,600,4000",
+    premiumMinAllocationBps:
+      config.premiumMinAllocationBps?.toString() ?? "2000",
+    dynamicBonusballEnabled: config.dynamicBonusballEnabled ?? true,
+    bonusballBase: config.bonusballBase?.toString() ?? "5",
+    bonusballPoolStepUsdc: formatTokenAmount(
+      config.bonusballPoolStepUsdc ?? BigInt(10_000_000_000),
+      decimals
+    ),
+    maxGuaranteePerRoundBps:
+      config.maxGuaranteePerRoundBps?.toString() ?? "3000",
     lpPoolCap: formatTokenAmount(config.lpPoolCap, decimals),
-    tierPayoutBps: config.tierPayoutBps.join(","),
+    // deprecated tierPayoutBps removed from config mapping
     untakenTierDestination:
       config.untakenTierDestination === UntakenTierDestination.LpPool
         ? "lpPool"
@@ -229,19 +306,33 @@ function configToForm(config: Config, decimals: number): ConfigForm {
   };
 }
 
-function parseTierPayouts(value: string): number[] {
+// deprecated tierPayoutBps parsing removed (use tierPremiumWeightBps + tierMinPayoutPerWinner)
+
+function parseTierMinPayouts(value: string, decimals: number): bigint[] {
+  const parsed = value
+    .split(",")
+    .map((item) => parseTokenAmount(item.trim(), decimals))
+    .filter((item) => item >= 0n);
+  if (parsed.length !== 12) {
+    throw new Error("Tier minimum payouts must contain exactly 12 values.");
+  }
+  return parsed;
+}
+
+function parseTierPremiumWeights(value: string): number[] {
   const parsed = value
     .split(",")
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isFinite(item));
   if (parsed.length !== 12) {
-    throw new Error("Tier payout bps must contain exactly 12 values.");
+    throw new Error("Tier premium weights must contain exactly 12 values.");
   }
   if (parsed.some((item) => item < 0 || item > 10_000)) {
-    throw new Error("Tier payout bps values must be between 0 and 10000.");
+    throw new Error("Tier premium weights must be between 0 and 10000.");
   }
-  if (parsed[0] !== 0) {
-    throw new Error("Tier 0 payout bps must be 0.");
+  const sum = parsed.reduce((a, b) => a + b, 0);
+  if (sum !== 10_000) {
+    throw new Error(`Tier premium weights must sum to 10000 (got ${sum}).`);
   }
   return parsed;
 }
@@ -250,24 +341,55 @@ function formToConfigParams(
   form: ConfigForm,
   decimals: number
 ): ConfigParamsArgs {
+  const premiumMinAllocationBps = Number(
+    form.premiumMinAllocationBps || "2000"
+  );
+  if (premiumMinAllocationBps < 0 || premiumMinAllocationBps > 10_000) {
+    throw new Error("Premium minimum allocation must be between 0 and 10000.");
+  }
+
+  const lpEdgeBps = Number(form.lpEdgeBps);
+  const referralFeeFirstBps = Number(form.referralFeeFirstBps);
+  const referralFeeSecondBps = Number(form.referralFeeSecondBps);
+  const totalFeeBps = lpEdgeBps + referralFeeFirstBps + referralFeeSecondBps;
+  if (totalFeeBps > 10_000) {
+    throw new Error(
+      `LP edge + referral fees must not exceed 10000 bps (got ${totalFeeBps}).`
+    );
+  }
+
   return {
     defaultTicketPrice: parseTokenAmount(form.defaultTicketPrice, decimals),
     defaultRoundDurationSecs: BigInt(form.defaultRoundDurationSecs || "0"),
-    registerWindowSecs: BigInt(form.registerWindowSecs || "0"),
     guaranteedPrizePool: parseTokenAmount(form.guaranteedPrizePool, decimals),
     drawTimeoutSlots: BigInt(form.drawTimeoutSlots || "0"),
     normalBallMax: Number(form.normalBallMax),
     bonusballMax: Number(form.bonusballMax),
-    lpEdgeBps: Number(form.lpEdgeBps),
-    referralFeeBps: Number(form.referralFeeBps),
-    referralWinShareBps: Number(form.referralWinShareBps),
+    lpEdgeBps,
+    referralFeeFirstBps,
+    referralFeeSecondBps,
+    referralWinShareFirstBps: Number(form.referralWinShareFirstBps),
+    referralWinShareSecondBps: Number(form.referralWinShareSecondBps),
+    tierMinPayoutPerWinner: parseTierMinPayouts(
+      form.tierMinPayoutPerWinner,
+      decimals
+    ),
+    tierPremiumWeightBps: parseTierPremiumWeights(form.tierPremiumWeightBps),
+    premiumMinAllocationBps,
+    dynamicBonusballEnabled: form.dynamicBonusballEnabled,
+    bonusballBase: Number(form.bonusballBase),
+    bonusballPoolStepUsdc: parseTokenAmount(
+      form.bonusballPoolStepUsdc,
+      decimals
+    ),
+    maxGuaranteePerRoundBps: Number(form.maxGuaranteePerRoundBps),
     lpPoolCap: parseTokenAmount(form.lpPoolCap, decimals),
-    tierPayoutBps: parseTierPayouts(form.tierPayoutBps),
+    // deprecated field removed
     untakenTierDestination:
       form.untakenTierDestination === "lpPool"
         ? UntakenTierDestination.LpPool
         : UntakenTierDestination.NextRound,
-  };
+  } as unknown as ConfigParamsArgs; // Extended fields not yet in generated type; safe cast
 }
 
 function parseManualPick(
@@ -469,41 +591,29 @@ function ConfigFormFields(props: {
   form: ConfigForm;
   onChange: (form: ConfigForm) => void;
 }) {
-  const set = (key: keyof ConfigForm) => (value: string) =>
+  const set = (key: keyof ConfigForm) => (value: string | boolean) =>
     props.onChange({ ...props.form, [key]: value });
 
   return (
     <div className="grid gap-3 md:grid-cols-3">
+      {/* Basic parameters */}
       <Field
-        label="Ticket price"
+        label="Ticket price (USDC)"
         value={props.form.defaultTicketPrice}
         onChange={set("defaultTicketPrice")}
       />
       <Field
-        label="Round duration seconds"
+        label="Round duration (seconds)"
         value={props.form.defaultRoundDurationSecs}
         onChange={set("defaultRoundDurationSecs")}
       />
       <Field
-        label="Register window seconds"
-        value={props.form.registerWindowSecs}
-        onChange={set("registerWindowSecs")}
-      />
-      <Field
-        label="Guaranteed prize pool"
-        value={props.form.guaranteedPrizePool}
-        onChange={set("guaranteedPrizePool")}
-      />
-      <Field
-        label="Draw timeout slots"
+        label="Draw timeout (slots)"
         value={props.form.drawTimeoutSlots}
         onChange={set("drawTimeoutSlots")}
       />
-      <Field
-        label="LP pool cap"
-        value={props.form.lpPoolCap}
-        onChange={set("lpPoolCap")}
-      />
+
+      {/* Ball parameters */}
       <Field
         label="Normal ball max"
         value={props.form.normalBallMax}
@@ -514,20 +624,121 @@ function ConfigFormFields(props: {
         value={props.form.bonusballMax}
         onChange={set("bonusballMax")}
       />
+      <div></div>
+
+      {/* Fee split (Epic 1) */}
+      <h3 className="col-span-3 mt-2 text-sm font-semibold">
+        Fee Split (Megapot-aligned)
+      </h3>
       <Field
-        label="LP edge bps"
+        label="LP edge bps (20%)"
         value={props.form.lpEdgeBps}
         onChange={set("lpEdgeBps")}
       />
       <Field
-        label="Referral fee bps"
-        value={props.form.referralFeeBps}
-        onChange={set("referralFeeBps")}
+        label="Referral fee 1st bps (8%)"
+        value={props.form.referralFeeFirstBps}
+        onChange={set("referralFeeFirstBps")}
       />
       <Field
-        label="Referral win-share bps"
-        value={props.form.referralWinShareBps}
-        onChange={set("referralWinShareBps")}
+        label="Referral fee 2nd bps (2%)"
+        value={props.form.referralFeeSecondBps}
+        onChange={set("referralFeeSecondBps")}
+      />
+      <Field
+        label="Referral win share 1st bps (8%)"
+        value={props.form.referralWinShareFirstBps}
+        onChange={set("referralWinShareFirstBps")}
+      />
+      <Field
+        label="Referral win share 2nd bps (2%)"
+        value={props.form.referralWinShareSecondBps}
+        onChange={set("referralWinShareSecondBps")}
+      />
+      <div></div>
+
+      {/* Tier redesign (Epic 2) */}
+      <h3 className="col-span-3 mt-2 text-sm font-semibold">
+        Tier Math (Guaranteed Min + Premium)
+      </h3>
+      <label className="grid gap-1 text-xs font-medium text-muted md:col-span-2">
+        Tier min payout per winner (USDC, CSV)
+        <textarea
+          value={props.form.tierMinPayoutPerWinner}
+          onChange={(event) =>
+            set("tierMinPayoutPerWinner")(event.target.value)
+          }
+          rows={2}
+          placeholder="0,0,0,0.5,0,1,2,5,10,25,100,0"
+          className="rounded-lg border border-border-low bg-card px-3 py-2 text-sm text-foreground outline-none transition focus:border-foreground/30"
+        />
+      </label>
+      <div></div>
+      <label className="grid gap-1 text-xs font-medium text-muted md:col-span-2">
+        Tier premium weights bps (sum to 10000)
+        <textarea
+          value={props.form.tierPremiumWeightBps}
+          onChange={(event) => set("tierPremiumWeightBps")(event.target.value)}
+          rows={2}
+          placeholder="0,0,0,1200,0,1200,1200,600,600,600,600,4000"
+          className="rounded-lg border border-border-low bg-card px-3 py-2 text-sm text-foreground outline-none transition focus:border-foreground/30"
+        />
+      </label>
+      <div></div>
+      <Field
+        label="Premium min allocation bps (20% floor)"
+        value={props.form.premiumMinAllocationBps}
+        onChange={set("premiumMinAllocationBps")}
+      />
+      <div></div>
+      <div></div>
+
+      {/* Dynamic bonusball (Epic 5) */}
+      <h3 className="col-span-3 mt-2 text-sm font-semibold">
+        Dynamic Bonusball
+      </h3>
+      <label className="flex items-center gap-2 text-xs font-medium text-muted">
+        <input
+          type="checkbox"
+          checked={props.form.dynamicBonusballEnabled}
+          onChange={(e) => set("dynamicBonusballEnabled")(e.target.checked)}
+          className="rounded border border-border-low"
+        />
+        Enable dynamic bonusball
+      </label>
+      <Field
+        label="Bonusball base (min range)"
+        value={props.form.bonusballBase}
+        onChange={set("bonusballBase")}
+      />
+      <Field
+        label="Bonusball pool step (USDC)"
+        value={props.form.bonusballPoolStepUsdc}
+        onChange={set("bonusballPoolStepUsdc")}
+      />
+
+      {/* Guaranteed pool (Epic 4) */}
+      <h3 className="col-span-3 mt-2 text-sm font-semibold">
+        Guaranteed Prize Pool
+      </h3>
+      <Field
+        label="Guaranteed prize pool (USDC)"
+        value={props.form.guaranteedPrizePool}
+        onChange={set("guaranteedPrizePool")}
+      />
+      <Field
+        label="Max guarantee per round bps (30% cap)"
+        value={props.form.maxGuaranteePerRoundBps}
+        onChange={set("maxGuaranteePerRoundBps")}
+      />
+      <div></div>
+
+      {/* Other parameters */}
+      <h3 className="col-span-3 mt-2 text-sm font-semibold">Other</h3>
+      <Field
+        label="LP pool cap (USDC)"
+        value={props.form.lpPoolCap}
+        onChange={set("lpPoolCap")}
       />
       <SelectField
         label="Untaken tier destination"
@@ -542,15 +753,8 @@ function ConfigFormFields(props: {
         <option value="nextRound">Next round</option>
         <option value="lpPool">LP pool</option>
       </SelectField>
-      <label className="grid gap-1 text-xs font-medium text-muted md:col-span-3">
-        Tier payout bps
-        <textarea
-          value={props.form.tierPayoutBps}
-          onChange={(event) => set("tierPayoutBps")(event.target.value)}
-          rows={2}
-          className="rounded-lg border border-border-low bg-card px-3 py-2 text-sm text-foreground outline-none transition focus:border-foreground/30"
-        />
-      </label>
+      <div></div>
+      {/* deprecated tierPayoutBps removed */}
     </div>
   );
 }
@@ -624,6 +828,7 @@ export function LotteryConsole() {
   const buyerEntry = useBuyerEntry(roundId, walletAddress);
   const tickets = useTickets(roundId, walletAddress);
   const scannedTickets = useTicketScan(roundId);
+  const compoundState = useCompoundState(walletAddress);
   const mintInfo = useMint(config?.usdcMint);
   const userUsdc = useTokenAccount(walletAddress, config?.usdcMint);
   const programTokens = useProgramTokenAddresses(
@@ -662,9 +867,17 @@ export function LotteryConsole() {
   const [subscriptionDaysInput, setSubscriptionDaysInput] = useState("7");
   const [subscriptionCountInput, setSubscriptionCountInput] = useState("1");
   const [subscriptionOwnerInput, setSubscriptionOwnerInput] = useState("");
+  const [referralParentInput, setReferralParentInput] = useState("");
   const [startTicketPriceInput, setStartTicketPriceInput] = useState("1");
   const [startDurationInput, setStartDurationInput] = useState("86400");
   const [startBonusMaxInput, setStartBonusMaxInput] = useState("15");
+  const [startGuaranteedPoolInput, setStartGuaranteedPoolInput] = useState("");
+  const [tallyPageIndex, setTallyPageIndex] = useState(0);
+  const [selectedWinningTicketAddresses, setSelectedWinningTicketAddresses] =
+    useState<Address[]>([]);
+  const [finalizeTallyRound, setFinalizeTallyRound] = useState(true);
+  const [compoundSourceRoundInput, setCompoundSourceRoundInput] = useState("");
+  const [compoundCountInput, setCompoundCountInput] = useState("1");
   const [randomnessDraft, setRandomnessDraft] = useState<{
     key?: string;
     value: string;
@@ -734,23 +947,45 @@ export function LotteryConsole() {
     !!roundAddress &&
     round.state === RoundState.Drawing &&
     !isDefaultAddress(round.randomnessAccount);
-  const unregisteredTickets = scannedTickets.tickets.filter(
-    (ticket) => !ticket.data.registered
+  const winningTicketRows = round
+    ? scannedTickets.tickets
+        .map((ticket) => {
+          const outcome = isWinningTicket(round, ticket.data);
+          return outcome.winning && !ticket.data.tallied
+            ? { ...ticket, ...outcome }
+            : null;
+        })
+        .filter(
+          (
+            ticket
+          ): ticket is (typeof scannedTickets.tickets)[number] & {
+            matches: number;
+            hasBonusball: boolean;
+            tier: number;
+            winning: true;
+          } => !!ticket
+        )
+    : [];
+  const tallyPageCount = Math.max(
+    1,
+    Math.ceil(winningTicketRows.length / TALLY_PAGE_SIZE)
   );
-  const registerBatchTickets = unregisteredTickets.slice(
-    0,
-    REGISTER_BATCH_LIMIT
+  const tallyPage = Math.min(tallyPageIndex, tallyPageCount - 1);
+  const tallyPageTickets = winningTicketRows.slice(
+    tallyPage * TALLY_PAGE_SIZE,
+    tallyPage * TALLY_PAGE_SIZE + TALLY_PAGE_SIZE
   );
-  const walletUnregistered = tickets.tickets.flatMap((account, index) => {
-    const ticketAddress = tickets.addresses[index];
-    return account.exists && ticketAddress && !account.data.registered
-      ? [{ address: ticketAddress, data: account.data }]
-      : [];
-  });
-  const registerCandidates =
-    registerBatchTickets.length > 0
-      ? registerBatchTickets
-      : walletUnregistered.slice(0, REGISTER_BATCH_LIMIT);
+  const selectedWinningTickets = winningTicketRows.filter((ticket) =>
+    selectedWinningTicketAddresses.includes(ticket.address)
+  );
+  const visibleWinningTicketAddresses = tallyPageTickets.map(
+    (ticket) => ticket.address
+  );
+  const allVisibleWinningTicketsSelected =
+    tallyPageTickets.length > 0 &&
+    tallyPageTickets.every((ticket) =>
+      selectedWinningTicketAddresses.includes(ticket.address)
+    );
 
   const runAction = async (label: string, action: () => Promise<void>) => {
     setBusyAction(label);
@@ -795,7 +1030,13 @@ export function LotteryConsole() {
 
   const validateOptionalReferrer = async (value: string) => {
     const referrer = tryParseAddress(value);
-    if (!referrer) return { referrer: undefined, referrerAccount: undefined };
+    if (!referrer) {
+      return {
+        referrer: undefined,
+        referrerAccount: undefined,
+        parentReferrerAccount: undefined,
+      };
+    }
     if (walletAddress && referrer === walletAddress) {
       throw new Error("Referrer cannot be the connected wallet.");
     }
@@ -804,8 +1045,30 @@ export function LotteryConsole() {
       commitment: "confirmed",
     });
     if (!account.exists) throw new Error("Referrer PDA does not exist.");
-    return { referrer, referrerAccount };
+
+    let parentReferrerAccount: Address | undefined;
+    if (account.data.hasParent) {
+      parentReferrerAccount = pdaAddress(
+        await findReferralPda({ referrer: account.data.parentReferrer })
+      );
+    }
+    return { referrer, referrerAccount, parentReferrerAccount };
   };
+
+  const handleGenerateReferralLink = () =>
+    runAction("Generate referral link", async () => {
+      if (!walletAddress) {
+        throw new Error("Connect a wallet first.");
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set("referrer", walletAddress);
+      const referralLink = url.toString();
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(referralLink);
+        return;
+      }
+      window.prompt("Copy referral link", referralLink);
+    });
 
   const handleQuickPick = () => {
     const normalMax = round?.normalBallMax ?? config?.normalBallMax ?? 30;
@@ -855,7 +1118,7 @@ export function LotteryConsole() {
         walletSigner,
         cfg.usdcMint
       );
-      const { referrer, referrerAccount } =
+      const { referrer, referrerAccount, parentReferrerAccount } =
         await validateOptionalReferrer(referrerInput);
       const firstTicketIndex = buyerEntry.buyerEntry?.ticketCount ?? 0n;
       const built = await buildBuyTicketsInstruction({
@@ -868,6 +1131,7 @@ export function LotteryConsole() {
         firstTicketIndex,
         referrer,
         referrerAccount,
+        parentReferrerAccount,
       });
 
       await send({
@@ -886,27 +1150,6 @@ export function LotteryConsole() {
       });
     });
 
-  const handleRegisterTicket = (ticket: { address: Address; data: Ticket }) =>
-    runAction("Register ticket", async () => {
-      const walletSigner = requireSigner();
-      const activeRound = requireRound();
-      const instruction = await getRegisterWinnerInstructionAsync({
-        trigger: walletSigner,
-        round: activeRound.address,
-        ticket: ticket.address,
-      });
-      await send({
-        action: "Register ticket",
-        instructions: [instruction],
-        expectedStateChange:
-          "Ticket match tier is registered against round results.",
-        touchedAccounts: [
-          { label: "round", address: activeRound.address },
-          { label: "ticket", address: ticket.address },
-        ],
-      });
-    });
-
   const handleClaimTicket = (ticket: { address: Address; data: Ticket }) =>
     runAction("Claim winnings", async () => {
       const walletSigner = requireSigner();
@@ -916,17 +1159,22 @@ export function LotteryConsole() {
         walletSigner,
         cfg.usdcMint
       );
+      const referrerAccount = ticket.data.hasReferrer
+        ? pdaAddress(await findReferralPda({ referrer: ticket.data.referrer }))
+        : undefined;
+      const parentReferrerAccount = ticket.data.hasParentReferrer
+        ? pdaAddress(
+            await findReferralPda({ referrer: ticket.data.parentReferrer })
+          )
+        : undefined;
       const instruction = await getClaimWinningsInstructionAsync({
         owner: walletSigner,
         round: activeRound.address,
         ticket: ticket.address,
         usdcMint: cfg.usdcMint,
         winnerTokenAccount: ata,
-        referrerAccount: ticket.data.hasReferrer
-          ? pdaAddress(
-              await findReferralPda({ referrer: ticket.data.referrer })
-            )
-          : undefined,
+        referrerAccount,
+        parentReferrerAccount,
       });
       await send({
         action: "Claim winnings",
@@ -937,6 +1185,88 @@ export function LotteryConsole() {
           { label: "round", address: activeRound.address },
           { label: "ticket", address: ticket.address },
           { label: "winner ATA", address: ata },
+        ],
+      });
+    });
+
+  const handleCompoundWinnings = () =>
+    runAction("Compound winnings", async () => {
+      const walletSigner = requireSigner();
+      const cfg = requireConfig();
+      const activeRound = requireRound();
+      if (activeRound.round.state !== RoundState.Open) {
+        throw new Error("Compounding requires an open round to buy into.");
+      }
+      const sourceIdRaw = compoundSourceRoundInput.trim();
+      if (!sourceIdRaw) {
+        throw new Error(
+          "Enter the source round id whose winnings to compound."
+        );
+      }
+      const sourceRoundId = BigInt(sourceIdRaw);
+      const sourceRoundAddress = pdaAddress(await findRoundPda(sourceRoundId));
+
+      // Find the wallet's winning, unclaimed, tallied tickets in the source round.
+      const winning = scannedTickets.tickets.filter(
+        (t) =>
+          t.data.owner === walletSigner.address &&
+          t.data.roundId === sourceRoundId &&
+          t.data.tallied &&
+          !t.data.claimed &&
+          t.data.tier > 0
+      );
+      if (winning.length === 0) {
+        throw new Error("No unclaimed winning tickets found in that round.");
+      }
+
+      const requested = Math.max(1, Number(compoundCountInput || "1"));
+      const ticketCount = Math.min(requested, 5);
+      const picks = Array.from({ length: ticketCount }, () =>
+        quickPick(
+          activeRound.round.normalBallMax,
+          activeRound.round.bonusballMax
+        )
+      );
+
+      const { referrer, referrerAccount, parentReferrerAccount } =
+        await validateOptionalReferrer(referrerInput);
+
+      const { createAta } = await buildWalletAta(walletSigner, cfg.usdcMint);
+      const firstTicketIndex = buyerEntry.buyerEntry?.ticketCount ?? 0n;
+
+      const built = await buildCompoundWinningsInstruction({
+        buyer: walletSigner,
+        round: activeRound.address,
+        roundId: activeRound.round.roundId,
+        sourceRound: sourceRoundAddress,
+        usdcMint: cfg.usdcMint,
+        picks,
+        firstTicketIndex,
+        winningTicketAddresses: winning.map((t) => t.address),
+        referrer,
+        referrerAccount,
+        parentReferrerAccount,
+      });
+
+      const compoundedTotal = winning.reduce((acc, t) => {
+        const tierIndex = t.data.tier;
+        // Approximate gross display from source round; on-chain divides pool/count.
+        return acc + 0n * BigInt(tierIndex);
+      }, 0n);
+
+      await send({
+        action: "Compound winnings",
+        instructions: [createAta, built.instruction],
+        expectedStateChange: `${winning.length} winning ticket(s) claimed and re-invested into up to ${ticketCount} new ticket(s).`,
+        usdcAmount:
+          compoundedTotal > 0n
+            ? formatTokenAmount(compoundedTotal, decimals)
+            : undefined,
+        touchedAccounts: [
+          { label: "source round", address: sourceRoundAddress },
+          { label: "round", address: activeRound.address },
+          { label: "compound state", address: built.compoundState },
+          { label: "buyer entry", address: built.buyerEntry },
         ],
       });
     });
@@ -958,17 +1288,22 @@ export function LotteryConsole() {
         walletSigner,
         cfg.usdcMint
       );
+      const referrerAccount = ticket.data.hasReferrer
+        ? pdaAddress(await findReferralPda({ referrer: ticket.data.referrer }))
+        : undefined;
+      const parentReferrerAccount = ticket.data.hasParentReferrer
+        ? pdaAddress(
+            await findReferralPda({ referrer: ticket.data.parentReferrer })
+          )
+        : undefined;
       const instruction = await getEmergencyRefundTicketInstructionAsync({
         owner: walletSigner,
         round: activeRound.address,
         ticket: ticket.address,
         usdcMint: cfg.usdcMint,
         ownerTokenAccount: ata,
-        referrerAccount: ticket.data.hasReferrer
-          ? pdaAddress(
-              await findReferralPda({ referrer: ticket.data.referrer })
-            )
-          : undefined,
+        referrerAccount,
+        parentReferrerAccount,
       });
       await send({
         action: "Emergency refund",
@@ -1019,8 +1354,22 @@ export function LotteryConsole() {
   const handleLpInitiateWithdraw = () =>
     runAction("Initiate LP withdraw", async () => {
       const walletSigner = requireSigner();
-      const shares = BigInt(lpWithdrawInput || "0");
-      if (shares <= 0n) throw new Error("Enter a share amount.");
+      const amount = parseTokenAmount(lpWithdrawInput || "0", decimals);
+      if (amount <= 0n) throw new Error("Enter a USDC amount.");
+      const position = lpPosition.position;
+      if (!position) throw new Error("No LP position is available.");
+      const vault = lpVault.lpVault;
+      const shares = usdcAmountToLpShares(
+        amount,
+        vault?.totalAssets,
+        vault?.totalShares
+      );
+      if (shares <= 0n) {
+        throw new Error("Amount is too small to convert into LP shares.");
+      }
+      if (shares > position.shares) {
+        throw new Error("Amount exceeds your LP position.");
+      }
       const instruction = await getLpInitiateWithdrawInstructionAsync({
         owner: walletSigner,
         shares,
@@ -1029,7 +1378,7 @@ export function LotteryConsole() {
         action: "Initiate LP withdraw",
         instructions: [instruction],
         expectedStateChange:
-          "Shares move to pending withdrawal for the current round.",
+          "USDC amount is converted to LP shares and moved to pending withdrawal.",
         touchedAccounts: [
           { label: "LP vault", address: lpVault.address! },
           {
@@ -1101,8 +1450,19 @@ export function LotteryConsole() {
   const handleInitializeReferral = () =>
     runAction("Initialize referral", async () => {
       const walletSigner = requireSigner();
+      const SYSTEM_ID = parseAddress("11111111111111111111111111111111");
+      const parentInput = tryParseAddress(referralParentInput);
+      const parentReferrer = parentInput ?? SYSTEM_ID;
+      const hasParent =
+        parentReferrer !== SYSTEM_ID && parentReferrer !== walletSigner.address;
+      const parentReferralPda = hasParent
+        ? pdaAddress(await findReferralPda({ referrer: parentReferrer }))
+        : undefined;
+
       const instruction = await getInitializeReferralInstructionAsync({
         referrer: walletSigner,
+        parentReferrer,
+        parentReferral: parentReferralPda,
       });
       await send({
         action: "Initialize referral",
@@ -1114,6 +1474,9 @@ export function LotteryConsole() {
             label: "referral",
             address: referral.address ?? walletSigner.address,
           },
+          ...(parentReferralPda
+            ? [{ label: "parent referral", address: parentReferralPda }]
+            : []),
         ],
       });
     });
@@ -1264,13 +1627,27 @@ export function LotteryConsole() {
           activeRound.round.bonusballMax
         )
       );
-      const referrerAccount = subscriptionAccount.data.hasReferrer
-        ? pdaAddress(
+      let referrerAccount: Address | undefined;
+      let parentReferrerAccount: Address | undefined;
+      if (subscriptionAccount.data.hasReferrer) {
+        referrerAccount = pdaAddress(
+          await findReferralPda({
+            referrer: subscriptionAccount.data.referrer,
+          })
+        );
+        const refAccount = await fetchMaybeReferral(
+          client.rpc,
+          referrerAccount,
+          { commitment: "confirmed" }
+        );
+        if (refAccount.exists && refAccount.data.hasParent) {
+          parentReferrerAccount = pdaAddress(
             await findReferralPda({
-              referrer: subscriptionAccount.data.referrer,
+              referrer: refAccount.data.parentReferrer,
             })
-          )
-        : undefined;
+          );
+        }
+      }
       const built = await buildProcessSubscriptionInstruction({
         keeper: walletSigner,
         owner,
@@ -1280,6 +1657,7 @@ export function LotteryConsole() {
         picks,
         firstTicketIndex: entry.exists ? entry.data.ticketCount : 0n,
         referrerAccount,
+        parentReferrerAccount,
       });
       await send({
         action: "Process subscription",
@@ -1429,6 +1807,11 @@ export function LotteryConsole() {
         startDurationInput || cfg.defaultRoundDurationSecs
       );
       const bonusballMax = Number(startBonusMaxInput || cfg.bonusballMax);
+      const guaranteedPrizePoolOverride = parseTokenAmount(
+        startGuaranteedPoolInput ||
+          formatTokenAmount(cfg.guaranteedPrizePool, decimals),
+        decimals
+      );
       const instruction = await getStartRoundInstructionAsync({
         starter: walletSigner,
         previousRound,
@@ -1437,6 +1820,7 @@ export function LotteryConsole() {
         ticketPrice,
         durationSeconds,
         bonusballMax,
+        guaranteedPrizePoolOverride,
       });
       await send({
         action: "Start round",
@@ -1535,7 +1919,7 @@ export function LotteryConsole() {
         action: "Reveal draw",
         instructions: [switchboardIx, lotteryIx],
         expectedStateChange:
-          "Winning balls are recorded and round enters settled/registering flow.",
+          "Winning balls are recorded and round enters settled flow.",
         touchedAccounts: [
           { label: "round", address: activeRound.address },
           { label: "randomness", address: randomnessAccount },
@@ -1543,55 +1927,85 @@ export function LotteryConsole() {
       });
     });
 
-  const handleRegisterBatch = () =>
-    runAction("Register winners batch", async () => {
+  const handleRefreshWinningTickets = () =>
+    runAction("Scan winning tickets", async () => {
+      await scannedTickets.mutate();
+      setTallyPageIndex(0);
+    });
+
+  const handleToggleWinningTicket = (address: Address) => {
+    setSelectedWinningTicketAddresses((current) =>
+      current.includes(address)
+        ? current.filter((entry) => entry !== address)
+        : [...current, address]
+    );
+  };
+
+  const handleToggleVisibleWinningTickets = () => {
+    if (allVisibleWinningTicketsSelected) {
+      setSelectedWinningTicketAddresses((current) =>
+        current.filter(
+          (address) => !visibleWinningTicketAddresses.includes(address)
+        )
+      );
+      return;
+    }
+    setSelectedWinningTicketAddresses((current) =>
+      Array.from(new Set([...current, ...visibleWinningTicketAddresses]))
+    );
+  };
+
+  const handleClearWinningTicketSelection = () => {
+    setSelectedWinningTicketAddresses([]);
+  };
+
+  const handleTallyWinningTickets = () =>
+    runAction("Tally round", async () => {
       const walletSigner = requireSigner();
+      const cfg = requireConfig();
       const activeRound = requireRound();
-      const candidates = registerCandidates;
-      if (!candidates.length) {
+      const noWinnersDiscovered = winningTicketRows.length === 0;
+      const selected = winningTicketRows.filter((ticket) =>
+        selectedWinningTicketAddresses.includes(ticket.address)
+      );
+      if (!selected.length && !noWinnersDiscovered) {
+        throw new Error("Select at least one winning ticket to tally.");
+      }
+      if (noWinnersDiscovered && !finalizeTallyRound) {
         throw new Error(
-          "No unregistered tickets were discovered for this round."
+          "No winning tickets found. Enable finalize to close the round as Claimable."
         );
       }
-      const instruction = await buildRegisterWinnersBatchInstruction({
+      if (finalizeTallyRound && selected.length !== winningTicketRows.length) {
+        throw new Error(
+          "Finalize can only be enabled when all remaining winning tickets are selected."
+        );
+      }
+      const instruction = await buildTallyRoundInstruction({
         trigger: walletSigner,
         round: activeRound.address,
-        ticketAddresses: candidates.map((ticket) => ticket.address),
+        usdcMint: cfg.usdcMint,
+        winningTicketAddresses: selected.map((ticket) => ticket.address),
+        finalize: finalizeTallyRound,
       });
       await send({
-        action: "Register winners batch",
+        action: "Tally round",
         instructions: [instruction],
-        expectedStateChange: `${candidates.length} ticket(s) are registered.`,
+        expectedStateChange: finalizeTallyRound
+          ? noWinnersDiscovered
+            ? "No winning tickets found; round is finalized as Claimable."
+            : `${selected.length} ticket(s) are tallied and the round is finalized.`
+          : `${selected.length} ticket(s) are tallied in the current batch.`,
         touchedAccounts: [
           { label: "round", address: activeRound.address },
-          ...candidates.map((ticket, index) => ({
-            label: `ticket ${index + 1}`,
+          ...selected.map((ticket, index) => ({
+            label: `winning ticket ${index + 1}`,
             address: ticket.address,
           })),
         ],
       });
-    });
-
-  const handleTallyTierPools = () =>
-    runAction("Tally tier pools", async () => {
-      const walletSigner = requireSigner();
-      const cfg = requireConfig();
-      const activeRound = requireRound();
-      if (activeRound.round.registeredCount !== activeRound.round.ticketCount) {
-        throw new Error("All tickets must be registered before tally.");
-      }
-      const instruction = await getTallyTierPoolsInstructionAsync({
-        trigger: walletSigner,
-        round: activeRound.address,
-        usdcMint: cfg.usdcMint,
-      });
-      await send({
-        action: "Tally tier pools",
-        instructions: [instruction],
-        expectedStateChange:
-          "Tier pools are finalized and claim flow is enabled.",
-        touchedAccounts: [{ label: "round", address: activeRound.address }],
-      });
+      setSelectedWinningTicketAddresses([]);
+      await scannedTickets.mutate();
     });
 
   const ticketRows = tickets.tickets.flatMap((account, index) => {
@@ -1600,6 +2014,10 @@ export function LotteryConsole() {
       ? [{ address: ticketAddress, data: account.data }]
       : [];
   });
+  console.log("All tickets for the round:", ticketRows);
+  const talliedTicketCount = ticketRows.filter(
+    (ticket) => ticket.data.tallied
+  ).length;
 
   const overviewMetrics = [
     {
@@ -1630,7 +2048,7 @@ export function LotteryConsole() {
     {
       label: "Tickets",
       value: round?.ticketCount.toString() ?? "0",
-      subvalue: `${round?.registeredCount ?? 0n} registered`,
+      subvalue: `${talliedTicketCount} tallied`,
     },
   ];
 
@@ -1648,6 +2066,7 @@ export function LotteryConsole() {
     { label: "Subscription", address: subscription.address },
     { label: "Sub escrow", address: programTokens.data?.subEscrow },
     { label: "Buyer entry", address: buyerEntry.address },
+    { label: "Compound state", address: compoundState.address },
     { label: "User USDC ATA", address: userUsdc.ata },
     {
       label: "Switchboard randomness",
@@ -1828,7 +2247,6 @@ export function LotteryConsole() {
                       RoundState.Open,
                       RoundState.Drawing,
                       RoundState.Settled,
-                      RoundState.Registering,
                       RoundState.Claimable,
                     ].map((state) => (
                       <div
@@ -1956,161 +2374,282 @@ export function LotteryConsole() {
             )}
 
             {activeTab === "player" && (
-              <div className="grid gap-5 lg:grid-cols-[420px_1fr]">
-                <Panel title="Ticket Picker">
-                  <div className="space-y-3">
-                    <Field
-                      label="Normal balls"
-                      value={normalInput}
-                      onChange={setNormalInput}
-                    />
-                    <Field
-                      label="Bonusball"
-                      value={bonusInput}
-                      onChange={setBonusInput}
-                    />
-                    <Field
-                      label="Batch count"
-                      value={batchCountInput}
-                      onChange={setBatchCountInput}
-                      type="number"
-                    />
-                    <Field
-                      label="Optional referrer"
-                      value={referrerInput}
-                      onChange={setReferrerInput}
-                      placeholder="Referral owner address"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <ActionButton onClick={handleQuickPick}>
-                        Quick pick
+              <div className="space-y-5">
+                <div className="grid gap-5 lg:grid-cols-[420px_1fr]">
+                  <Panel title="Ticket Picker">
+                    <div className="space-y-3">
+                      <Field
+                        label="Normal balls"
+                        value={normalInput}
+                        onChange={setNormalInput}
+                      />
+                      <Field
+                        label="Bonusball"
+                        value={bonusInput}
+                        onChange={setBonusInput}
+                      />
+                      <Field
+                        label="Batch count"
+                        value={batchCountInput}
+                        onChange={setBatchCountInput}
+                        type="number"
+                      />
+                      <Field
+                        label="Optional referrer"
+                        value={referrerInput}
+                        onChange={setReferrerInput}
+                        placeholder="Referral owner address"
+                      />
+                      <ActionButton
+                        onClick={handleGenerateReferralLink}
+                        disabled={!walletAddress || isSending}
+                      >
+                        Generate referral link
                       </ActionButton>
+                      <div className="flex flex-wrap gap-2">
+                        <ActionButton onClick={handleQuickPick}>
+                          Quick pick
+                        </ActionButton>
+                        <ActionButton
+                          variant="primary"
+                          onClick={handleBuyTickets}
+                          disabled={
+                            !canBuy || isSending || busyAction === "Buy tickets"
+                          }
+                        >
+                          Buy tickets
+                        </ActionButton>
+                      </div>
+                      <div className="grid gap-2 rounded-lg border border-border-low bg-background/60 p-3 text-xs text-muted">
+                        <div className="flex justify-between gap-3">
+                          <span>User USDC</span>
+                          <span className="font-mono">
+                            {formatTokenAmount(userUsdc.amount, decimals)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Ticket price</span>
+                          <span className="font-mono">
+                            {formatTokenAmount(round?.ticketPrice, decimals)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Buyer entry</span>
+                          <AddressLink address={buyerEntry.address} />
+                        </div>
+                      </div>
+                    </div>
+                  </Panel>
+
+                  <Panel title="My Tickets">
+                    <div className="space-y-3">
+                      {ticketRows.length === 0 && (
+                        <p className="text-sm text-muted">
+                          No tickets found for this round.
+                        </p>
+                      )}
+                      {ticketRows.map((ticket) => {
+                        const outcome = round
+                          ? countTicketMatches(round, ticket.data)
+                          : { matches: 0, hasBonusball: false };
+                        const matchedNormals = round
+                          ? ticket.data.normals.filter((value) =>
+                              Array.from(round.winningNormals).includes(value)
+                            )
+                          : [];
+
+                        return (
+                          <div
+                            key={ticket.address}
+                            className="grid gap-3 rounded-lg border border-border-low bg-background/60 p-3 md:grid-cols-[1fr_auto]"
+                          >
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-mono text-sm">
+                                  #{ticket.data.ticketIndex.toString()}
+                                </span>
+                                <StatusBadge
+                                  tone={ticket.data.tallied ? "good" : "warn"}
+                                >
+                                  {ticket.data.tallied
+                                    ? "Tallied"
+                                    : "Pending tally"}
+                                </StatusBadge>
+                                <StatusBadge
+                                  tone={
+                                    ticket.data.claimed
+                                      ? "good"
+                                      : ticket.data.tallied &&
+                                          ticket.data.tier > 0 &&
+                                          ticketPayoutEstimate(
+                                            round,
+                                            ticket.data
+                                          ) > 0n
+                                        ? "good"
+                                        : ticket.data.tallied &&
+                                            ticket.data.tier > 0
+                                          ? "warn"
+                                          : "neutral"
+                                  }
+                                >
+                                  {ticket.data.claimed
+                                    ? "Claimed"
+                                    : ticket.data.tallied &&
+                                        ticket.data.tier > 0
+                                      ? ticketPayoutEstimate(
+                                          round,
+                                          ticket.data
+                                        ) > 0n
+                                        ? `Tier ${ticket.data.tier} — winner 💰`
+                                        : `Tier ${ticket.data.tier} — no payout`
+                                      : `Tier ${ticket.data.tier}`}
+                                </StatusBadge>
+                              </div>
+                              <p className="mt-2 text-sm">
+                                {ballsToString(ticket.data.normals)} +{" "}
+                                {ticket.data.bonusball}
+                              </p>
+                              <p className="mt-1 text-xs text-muted">
+                                Matching normals:{" "}
+                                {round ? ballsToString(matchedNormals) : "-"}
+                                {" · "}
+                                Bonusball:{" "}
+                                {round
+                                  ? outcome.hasBonusball
+                                    ? "match"
+                                    : "no match"
+                                  : "-"}
+                                {" · "}
+                                Matches: {round ? outcome.matches : "-"}
+                              </p>
+                              <p className="mt-1 text-xs text-muted">
+                                Paid{" "}
+                                {formatTokenAmount(
+                                  ticket.data.pricePaid,
+                                  decimals
+                                )}{" "}
+                                USDC, payout estimate{" "}
+                                {formatTokenAmount(
+                                  ticketPayoutEstimate(round, ticket.data),
+                                  decimals
+                                )}
+                              </p>
+                              <p className="mt-1">
+                                <AddressLink address={ticket.address} />
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-start gap-2 md:justify-end">
+                              <ActionButton
+                                onClick={() => handleClaimTicket(ticket)}
+                                disabled={
+                                  !round ||
+                                  round.state !== RoundState.Claimable ||
+                                  ticket.data.claimed ||
+                                  ticket.data.tier === 0 ||
+                                  ticketPayoutEstimate(round, ticket.data) ===
+                                    0n ||
+                                  isSending
+                                }
+                              >
+                                Claim
+                              </ActionButton>
+                              <ActionButton
+                                variant="danger"
+                                onClick={() => handleEmergencyRefund(ticket)}
+                                disabled={
+                                  !config?.emergencyMode &&
+                                  round?.state !== RoundState.Emergency
+                                }
+                              >
+                                Refund
+                              </ActionButton>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {tickets.isTruncated && (
+                        <p className="text-xs text-muted">
+                          Ticket list is capped at 500 derived PDAs in the
+                          browser.
+                        </p>
+                      )}
+                    </div>
+                  </Panel>
+                </div>
+
+                <Panel title="Compound Winnings">
+                  <div className="grid gap-5 md:grid-cols-2">
+                    <div className="space-y-3">
+                      <p className="text-xs text-muted">
+                        Claim winning tickets from a past round and immediately
+                        re-invest them into the current open round. Sub-ticket
+                        remainders are saved and added to future compounds. Max
+                        5 new tickets per call.
+                      </p>
+                      <Field
+                        label="Source round ID"
+                        value={compoundSourceRoundInput}
+                        onChange={setCompoundSourceRoundInput}
+                        placeholder="Round ID whose winnings to compound"
+                        type="number"
+                      />
+                      <Field
+                        label="New tickets to buy (1–5)"
+                        value={compoundCountInput}
+                        onChange={setCompoundCountInput}
+                        type="number"
+                      />
+                      <p className="text-xs text-muted">
+                        Uses referrer from Ticket Picker. Winning, tallied,
+                        unclaimed tickets in the source round owned by your
+                        wallet will be selected automatically.
+                      </p>
                       <ActionButton
                         variant="primary"
-                        onClick={handleBuyTickets}
+                        onClick={handleCompoundWinnings}
                         disabled={
-                          !canBuy || isSending || busyAction === "Buy tickets"
+                          !canBuy ||
+                          !compoundSourceRoundInput ||
+                          isSending ||
+                          busyAction === "Compound winnings"
                         }
                       >
-                        Buy tickets
+                        Compound winnings
                       </ActionButton>
                     </div>
-                    <div className="grid gap-2 rounded-lg border border-border-low bg-background/60 p-3 text-xs text-muted">
-                      <div className="flex justify-between gap-3">
-                        <span>User USDC</span>
-                        <span className="font-mono">
-                          {formatTokenAmount(userUsdc.amount, decimals)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Ticket price</span>
-                        <span className="font-mono">
-                          {formatTokenAmount(round?.ticketPrice, decimals)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Buyer entry</span>
-                        <AddressLink address={buyerEntry.address} />
-                      </div>
-                    </div>
-                  </div>
-                </Panel>
 
-                <Panel title="My Tickets">
-                  <div className="space-y-3">
-                    {ticketRows.length === 0 && (
-                      <p className="text-sm text-muted">
-                        No tickets found for this round.
-                      </p>
-                    )}
-                    {ticketRows.map((ticket) => (
-                      <div
-                        key={ticket.address}
-                        className="grid gap-3 rounded-lg border border-border-low bg-background/60 p-3 md:grid-cols-[1fr_auto]"
-                      >
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-sm">
-                              #{ticket.data.ticketIndex.toString()}
-                            </span>
-                            <StatusBadge
-                              tone={ticket.data.registered ? "good" : "warn"}
-                            >
-                              {ticket.data.registered
-                                ? "Registered"
-                                : "Unregistered"}
-                            </StatusBadge>
-                            <StatusBadge
-                              tone={ticket.data.claimed ? "good" : "neutral"}
-                            >
-                              {ticket.data.claimed
-                                ? "Claimed"
-                                : `Tier ${ticket.data.tier}`}
-                            </StatusBadge>
-                          </div>
-                          <p className="mt-2 text-sm">
-                            {ballsToString(ticket.data.normals)} +{" "}
-                            {ticket.data.bonusball}
-                          </p>
-                          <p className="mt-1 text-xs text-muted">
-                            Paid{" "}
-                            {formatTokenAmount(ticket.data.pricePaid, decimals)}{" "}
-                            USDC, payout estimate{" "}
-                            {formatTokenAmount(
-                              ticketPayoutEstimate(round, ticket.data),
-                              decimals
-                            )}
-                          </p>
-                          <p className="mt-1">
-                            <AddressLink address={ticket.address} />
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-start gap-2 md:justify-end">
-                          <ActionButton
-                            onClick={() => handleRegisterTicket(ticket)}
-                            disabled={
-                              !round ||
-                              ticket.data.registered ||
-                              ![
-                                RoundState.Settled,
-                                RoundState.Registering,
-                              ].includes(round.state) ||
-                              isSending
-                            }
-                          >
-                            Register
-                          </ActionButton>
-                          <ActionButton
-                            onClick={() => handleClaimTicket(ticket)}
-                            disabled={
-                              !round ||
-                              round.state !== RoundState.Claimable ||
-                              ticket.data.claimed ||
-                              ticket.data.tier === 0 ||
-                              isSending
-                            }
-                          >
-                            Claim
-                          </ActionButton>
-                          <ActionButton
-                            variant="danger"
-                            onClick={() => handleEmergencyRefund(ticket)}
-                            disabled={
-                              !config?.emergencyMode &&
-                              round?.state !== RoundState.Emergency
-                            }
-                          >
-                            Refund
-                          </ActionButton>
-                        </div>
-                      </div>
-                    ))}
-                    {tickets.isTruncated && (
-                      <p className="text-xs text-muted">
-                        Ticket list is capped at 500 derived PDAs in the
-                        browser.
-                      </p>
-                    )}
+                    <div className="grid gap-3 sm:grid-cols-2 content-start">
+                      <Metric
+                        label="Pending balance"
+                        value={formatTokenAmount(
+                          compoundState.compoundState?.pendingUsdc,
+                          decimals
+                        )}
+                        subvalue="USDC — sub-ticket remainder"
+                      />
+                      <Metric
+                        label="Lifetime compounded"
+                        value={formatTokenAmount(
+                          compoundState.compoundState?.lifetimeCompounded,
+                          decimals
+                        )}
+                        subvalue="USDC"
+                      />
+                      <Metric
+                        label="Lifetime tickets"
+                        value={
+                          compoundState.compoundState?.lifetimeTickets.toString() ??
+                          "0"
+                        }
+                      />
+                      <Metric
+                        label="Compound state"
+                        value={<AddressLink address={compoundState.address} />}
+                        subvalue={
+                          compoundState.exists ? "initialized" : "not yet used"
+                        }
+                      />
+                    </div>
                   </div>
                 </Panel>
               </div>
@@ -2144,6 +2683,22 @@ export function LotteryConsole() {
                       }
                       subvalue={`round ${lpPosition.position?.pendingWithdrawRound ?? 0n}`}
                     />
+                    <Metric
+                      label="Lifetime edge earned"
+                      value={formatTokenAmount(
+                        lpVault.lpVault?.lifetimeEdgeEarned,
+                        decimals
+                      )}
+                      subvalue="USDC"
+                    />
+                    <Metric
+                      label="Lifetime jackpot loss"
+                      value={formatTokenAmount(
+                        lpVault.lpVault?.lifetimeJackpotLoss,
+                        decimals
+                      )}
+                      subvalue="USDC"
+                    />
                   </div>
                   <p className="mt-4 text-sm text-muted">
                     Withdrawals finalize after the pending round recorded in the
@@ -2175,9 +2730,10 @@ export function LotteryConsole() {
                       </ActionButton>
                     </div>
                     <Field
-                      label="Withdraw shares"
+                      label="Withdraw amount (USDC)"
                       value={lpWithdrawInput}
                       onChange={setLpWithdrawInput}
+                      placeholder="e.g. 100"
                     />
                     <div className="flex flex-wrap gap-2">
                       <ActionButton
@@ -2214,6 +2770,14 @@ export function LotteryConsole() {
 
             {activeTab === "referral" && (
               <Panel title="Referral">
+                <div className="grid gap-3">
+                  <Field
+                    label="Parent referrer address (optional)"
+                    value={referralParentInput}
+                    onChange={setReferralParentInput}
+                    placeholder="Leave blank for no parent"
+                  />
+                </div>
                 <div className="grid gap-4 md:grid-cols-3">
                   <Metric
                     label="Referral PDA"
@@ -2229,12 +2793,20 @@ export function LotteryConsole() {
                     subvalue="USDC"
                   />
                   <Metric
-                    label="Lifetime earned"
+                    label="Lifetime earned (1st)"
                     value={formatTokenAmount(
-                      referral.referral?.lifetimeEarned,
+                      referral.referral?.lifetimeEarnedFirst,
                       decimals
                     )}
-                    subvalue="USDC"
+                    subvalue="USDC direct"
+                  />
+                  <Metric
+                    label="Lifetime earned (2nd)"
+                    value={formatTokenAmount(
+                      referral.referral?.lifetimeEarnedSecond,
+                      decimals
+                    )}
+                    subvalue="USDC upstream"
                   />
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -2489,6 +3061,15 @@ export function LotteryConsole() {
                       value={startBonusMaxInput}
                       onChange={setStartBonusMaxInput}
                     />
+                    <Field
+                      label="Guaranteed prize pool override (USDC)"
+                      value={startGuaranteedPoolInput}
+                      onChange={setStartGuaranteedPoolInput}
+                      placeholder={formatTokenAmount(
+                        config?.guaranteedPrizePool ?? 0n,
+                        decimals
+                      )}
+                    />
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <ActionButton
@@ -2498,31 +3079,152 @@ export function LotteryConsole() {
                     >
                       Start round
                     </ActionButton>
-                    {isAdmin && (
+                  </div>
+                </Panel>
+
+                <Panel title="Tally Round">
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
                       <ActionButton
-                        onClick={handleRegisterBatch}
+                        variant="primary"
+                        onClick={handleRefreshWinningTickets}
+                        disabled={!round || isMainnet || isSending}
+                      >
+                        Scan RPC ({winningTicketRows.length})
+                      </ActionButton>
+                      <ActionButton
+                        onClick={handleToggleVisibleWinningTickets}
+                        disabled={!tallyPageTickets.length || isSending}
+                      >
+                        {allVisibleWinningTicketsSelected
+                          ? "Unselect page"
+                          : "Select page"}
+                      </ActionButton>
+                      <ActionButton
+                        onClick={handleClearWinningTicketSelection}
+                        disabled={
+                          !selectedWinningTicketAddresses.length || isSending
+                        }
+                      >
+                        Clear selection
+                      </ActionButton>
+                      <label className="flex items-center gap-2 text-xs font-medium text-muted">
+                        <input
+                          type="checkbox"
+                          checked={finalizeTallyRound}
+                          onChange={(event) =>
+                            setFinalizeTallyRound(event.target.checked)
+                          }
+                          className="h-4 w-4 rounded border-border-low bg-card"
+                        />
+                        Finalize pool on last batch
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-low bg-background/60 px-3 py-2 text-xs text-muted">
+                      <div>
+                        {winningTicketRows.length} winning ticket(s) discovered
+                        {round ? ` for round ${round.roundId.toString()}` : ""}
+                      </div>
+                      <div>
+                        Selected {selectedWinningTickets.length} of{" "}
+                        {winningTicketRows.length}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                      <ActionButton
+                        onClick={() =>
+                          setTallyPageIndex((current) =>
+                            Math.max(0, current - 1)
+                          )
+                        }
+                        disabled={tallyPage <= 0 || isSending}
+                      >
+                        Previous
+                      </ActionButton>
+                      <ActionButton
+                        onClick={() =>
+                          setTallyPageIndex((current) =>
+                            Math.min(tallyPageCount - 1, current + 1)
+                          )
+                        }
+                        disabled={tallyPage >= tallyPageCount - 1 || isSending}
+                      >
+                        Next
+                      </ActionButton>
+                      <span>
+                        Page {tallyPage + 1} of {tallyPageCount}
+                      </span>
+                      <ActionButton
+                        variant="primary"
+                        onClick={handleTallyWinningTickets}
                         disabled={
                           !round ||
-                          !registerCandidates.length ||
+                          (!winningTicketRows.length
+                            ? !finalizeTallyRound
+                            : !selectedWinningTicketAddresses.length) ||
                           isMainnet ||
                           isSending
                         }
                       >
-                        Register batch ({registerCandidates.length})
+                        Tally selected ({selectedWinningTickets.length})
                       </ActionButton>
-                    )}
-                    <ActionButton
-                      onClick={handleTallyTierPools}
-                      disabled={
-                        !round ||
-                        round.registeredCount !== round.ticketCount ||
-                        round.tallyDone ||
-                        isMainnet ||
-                        isSending
-                      }
-                    >
-                      Tally tier pools
-                    </ActionButton>
+                    </div>
+
+                    <div className="grid gap-2">
+                      {tallyPageTickets.length === 0 && (
+                        <p className="text-sm text-muted">
+                          Scan RPC to load winning tickets for this round.
+                        </p>
+                      )}
+                      {tallyPageTickets.map((ticket) => (
+                        <label
+                          key={ticket.address}
+                          className="grid gap-3 rounded-lg border border-border-low bg-background/60 p-3 md:grid-cols-[auto_1fr_auto] md:items-start"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedWinningTicketAddresses.includes(
+                              ticket.address
+                            )}
+                            onChange={() =>
+                              handleToggleWinningTicket(ticket.address)
+                            }
+                            className="mt-1 h-4 w-4 rounded border-border-low bg-card"
+                          />
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-sm">
+                                #{ticket.data.ticketIndex.toString()}
+                              </span>
+                              <StatusBadge tone="good">
+                                Tier {ticket.tier}
+                              </StatusBadge>
+                              <StatusBadge
+                                tone={ticket.hasBonusball ? "good" : "neutral"}
+                              >
+                                {ticket.hasBonusball ? "Bonusball" : "No bonus"}
+                              </StatusBadge>
+                            </div>
+                            <p className="mt-2 text-sm">
+                              {ballsToString(ticket.data.normals)} +{" "}
+                              {ticket.data.bonusball}
+                            </p>
+                            <p className="mt-1 text-xs text-muted">
+                              {ticket.matches} normal match
+                              {ticket.matches === 1 ? "" : "es"} ·
+                              {ticket.data.tallied
+                                ? "Already tallied"
+                                : "Pending tally"}
+                            </p>
+                          </div>
+                          <div className="pt-1 md:text-right">
+                            <AddressLink address={ticket.address} />
+                          </div>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 </Panel>
 

@@ -15,18 +15,29 @@ pub struct Ticket {
     pub owner: Pubkey,
     pub buyer: Pubkey,
     pub referrer: Pubkey,
+    pub parent_referrer: Pubkey,
     pub has_referrer: bool,
+    pub has_parent_referrer: bool,
     pub purchased_at: i64,
     pub price_paid: u64,
     pub normals: [u8; NORMAL_BALL_COUNT],
     pub bonusball: u8,
-    pub registered: bool,
+    /// True once the ticket has been processed by `tally_round` (tier set).
+    pub tallied: bool,
     pub claimed: bool,
     pub tier: u8,
     pub bump: u8,
 }
 
 impl Ticket {
-    pub const LEN: usize =
-        8 + 8 + 32 + 32 + 32 + 1 + 8 + 8 + NORMAL_BALL_COUNT + 1 + 1 + 1 + 1 + 1 + 16;
+    pub const LEN: usize = 8                // round_id
+        + 8                                  // ticket_index
+        + 32 + 32                            // owner, buyer
+        + 32 + 32                            // referrer, parent_referrer
+        + 1 + 1                              // has_referrer, has_parent_referrer
+        + 8                                  // purchased_at
+        + 8                                  // price_paid
+        + NORMAL_BALL_COUNT + 1              // normals, bonusball
+        + 1 + 1                              // tallied, claimed
+        + 1 + 1;                             // tier, bump
 }

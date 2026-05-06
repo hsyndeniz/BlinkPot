@@ -7,10 +7,14 @@ pub struct LpVault {
     pub total_shares: u128,
     pub total_assets: u64,
     pub pending_withdraw_shares: u128,
+    /// Lifetime LP edge (compounding) earned across all rounds.
+    pub lifetime_edge_earned: u64,
+    /// Lifetime jackpot losses absorbed by the LP guarantee mechanism.
+    pub lifetime_jackpot_loss: u64,
 }
 
 impl LpVault {
-    pub const LEN: usize = 1 + 1 + 16 + 8 + 16 + 16;
+    pub const LEN: usize = 1 + 1 + 16 + 8 + 16 + 8 + 8 + 16;
 }
 
 #[account]

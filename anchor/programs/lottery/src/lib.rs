@@ -14,7 +14,7 @@ use instructions::*;
 use state::config::ConfigParams;
 use state::ticket::TicketPick;
 
-declare_id!("GAmpA5BkYnV1dsYfVkYwuVz7LxQai5QRkBSnZp6BVVH");
+declare_id!("348H4GCNY1nAp1bUoG2rAZFkEXwiw5zW4aXLC5dvVN7c");
 
 #[program]
 pub mod lottery {
@@ -45,8 +45,15 @@ pub mod lottery {
         ticket_price: u64,
         duration_seconds: i64,
         bonusball_max: u8,
+        guaranteed_prize_pool_override: u64,
     ) -> Result<()> {
-        instructions::round::start_round(ctx, ticket_price, duration_seconds, bonusball_max)
+        instructions::round::start_round(
+            ctx,
+            ticket_price,
+            duration_seconds,
+            bonusball_max,
+            guaranteed_prize_pool_override,
+        )
     }
 
     pub fn buy_tickets<'info>(
@@ -65,22 +72,23 @@ pub mod lottery {
         instructions::draw::reveal_draw(ctx)
     }
 
-    pub fn register_winner(ctx: Context<RegisterWinner>) -> Result<()> {
-        instructions::claim::register_winner(ctx)
-    }
-
-    pub fn register_winners_batch<'info>(
-        ctx: Context<'_, '_, 'info, 'info, RegisterWinnersBatch<'info>>,
+    pub fn tally_round<'info>(
+        ctx: Context<'_, '_, 'info, 'info, TallyRound<'info>>,
+        finalize: bool,
     ) -> Result<()> {
-        instructions::claim::register_winners_batch(ctx)
-    }
-
-    pub fn tally_tier_pools(ctx: Context<TallyTierPools>) -> Result<()> {
-        instructions::claim::tally_tier_pools(ctx)
+        instructions::claim::tally_round(ctx, finalize)
     }
 
     pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
         instructions::claim::claim_winnings(ctx)
+    }
+
+    pub fn compound_winnings<'info>(
+        ctx: Context<'_, '_, 'info, 'info, CompoundWinnings<'info>>,
+        picks: Vec<TicketPick>,
+        referrer: Option<Pubkey>,
+    ) -> Result<()> {
+        instructions::compound::compound_winnings(ctx, picks, referrer)
     }
 
     pub fn lp_deposit(ctx: Context<LpDeposit>, amount: u64) -> Result<()> {
@@ -99,8 +107,11 @@ pub mod lottery {
         instructions::referral::claim_referral_fees(ctx)
     }
 
-    pub fn initialize_referral(ctx: Context<InitializeReferral>) -> Result<()> {
-        instructions::referral::initialize_referral(ctx)
+    pub fn initialize_referral(
+        ctx: Context<InitializeReferral>,
+        parent_referrer: Pubkey,
+    ) -> Result<()> {
+        instructions::referral::initialize_referral(ctx, parent_referrer)
     }
 
     pub fn subscribe_daily(

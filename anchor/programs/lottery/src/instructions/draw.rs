@@ -225,15 +225,10 @@ pub fn reveal_draw(ctx: Context<RevealDraw>) -> Result<()> {
     round.state = RoundState::Settled;
     round.settled_at = clock.unix_timestamp;
 
-    // Register deadline is deprecated; registration is permissionless and can
-    // happen any time before tally.
-    round.register_deadline = 0;
-
     emit!(DrawSettled {
         round_id: round.round_id,
         winning_normals: normals,
         winning_bonusball: bonusball,
-        register_deadline: round.register_deadline,
     });
     Ok(())
 }

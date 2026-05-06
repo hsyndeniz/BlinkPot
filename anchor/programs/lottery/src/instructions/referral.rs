@@ -10,6 +10,7 @@ use crate::state::config::Config;
 use crate::state::referral::Referral;
 
 #[derive(Accounts)]
+#[instruction(parent_referrer: Pubkey)]
 pub struct InitializeReferral<'info> {
     #[account(mut)]
     pub referrer: Signer<'info>,
@@ -23,18 +24,52 @@ pub struct InitializeReferral<'info> {
     )]
     pub referral: Account<'info, Referral>,
 
+    /// Parent's Referral PDA. Required if `parent_referrer != Pubkey::default()`,
+    /// validating that the upstream chain actually exists.
+    pub parent_referral: Option<Account<'info, Referral>>,
+
     pub system_program: Program<'info, System>,
 }
 
-pub fn initialize_referral(ctx: Context<InitializeReferral>) -> Result<()> {
+pub fn initialize_referral(
+    ctx: Context<InitializeReferral>,
+    parent_referrer: Pubkey,
+) -> Result<()> {
+    let owner = ctx.accounts.referrer.key();
+    let has_parent = parent_referrer != Pubkey::default();
+
+    if has_parent {
+        require_keys_neq!(parent_referrer, owner, LotteryError::SelfParentReferrer);
+        let parent = ctx
+            .accounts
+            .parent_referral
+            .as_ref()
+            .ok_or(error!(LotteryError::ReferralRequired))?;
+        let (expected, _) = Pubkey::find_program_address(
+            &[REFERRAL_SEED, parent_referrer.as_ref()],
+            ctx.program_id,
+        );
+        require_keys_eq!(parent.key(), expected, LotteryError::ParentReferrerMismatch);
+        require_keys_eq!(parent.owner, parent_referrer, LotteryError::ParentReferrerMismatch);
+    } else {
+        require!(
+            ctx.accounts.parent_referral.is_none(),
+            LotteryError::InvalidConfig
+        );
+    }
+
     let referral = &mut ctx.accounts.referral;
-    referral.owner = ctx.accounts.referrer.key();
+    referral.owner = owner;
+    referral.parent_referrer = parent_referrer;
+    referral.has_parent = has_parent;
     referral.accrued = 0;
-    referral.lifetime_earned = 0;
+    referral.lifetime_earned_first = 0;
+    referral.lifetime_earned_second = 0;
     referral.bump = ctx.bumps.referral;
 
     emit!(ReferralInitialized {
-        referrer: referral.owner,
+        referrer: owner,
+        parent_referrer: if has_parent { Some(parent_referrer) } else { None },
     });
     Ok(())
 }

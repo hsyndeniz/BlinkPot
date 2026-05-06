@@ -3,12 +3,13 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::constants::{
     BPS_DENOM, CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
-    MAX_BONUSBALL_MAX, MAX_ROUND_DURATION_SECS, MIN_BONUSBALL_MAX, MIN_ROUND_DURATION_SECS,
-    NORMAL_BALL_COUNT, PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED, ROUND_COUNTER_SEED,
+    MAX_BONUSBALL_MAX, MAX_GUARANTEE_PER_ROUND_BPS_CAP, MAX_ROUND_DURATION_SECS, MIN_BONUSBALL_MAX,
+    MIN_PRIZE_POOL_BPS, MIN_ROUND_DURATION_SECS, NORMAL_BALL_COUNT, PRIZE_VAULT_AUTHORITY_SEED,
+    PRIZE_VAULT_TOKEN_SEED, ROUND_COUNTER_SEED,
 };
 use crate::errors::LotteryError;
 use crate::events::{ConfigInitialized, ConfigUpdated, EmergencyModeToggled, PausedToggled};
-use crate::math::validate_tier_payout_bps;
+use crate::math::validate_tier_weight_bps;
 use crate::state::config::{Config, ConfigParams, RoundCounter};
 use crate::state::lp::LpVault;
 
@@ -31,23 +32,60 @@ pub(crate) fn validate_params(params: &ConfigParams) -> Result<()> {
         LotteryError::InvalidBonusballRange
     );
     require!(
+        params.bonusball_base >= MIN_BONUSBALL_MAX && params.bonusball_base <= MAX_BONUSBALL_MAX,
+        LotteryError::InvalidBonusballRange
+    );
+
+    // Fee BPS — each individually <= 100% and sum doesn't violate the prize pool floor.
+    require!(
         params.lp_edge_bps as u64 <= BPS_DENOM,
         LotteryError::InvalidConfig
     );
     require!(
-        params.referral_fee_bps as u64 <= BPS_DENOM,
+        params.referral_fee_first_bps as u64 <= BPS_DENOM,
         LotteryError::InvalidConfig
     );
     require!(
-        params.lp_edge_bps as u64 + params.referral_fee_bps as u64 <= BPS_DENOM,
+        params.referral_fee_second_bps as u64 <= BPS_DENOM,
+        LotteryError::InvalidConfig
+    );
+    let take = params.lp_edge_bps as u64
+        + params.referral_fee_first_bps as u64
+        + params.referral_fee_second_bps as u64;
+    require!(take <= BPS_DENOM, LotteryError::PrizePoolBelowFloor);
+    require!(
+        BPS_DENOM - take >= MIN_PRIZE_POOL_BPS as u64,
+        LotteryError::PrizePoolBelowFloor
+    );
+
+    require!(
+        params.referral_win_share_first_bps as u64 <= BPS_DENOM,
         LotteryError::InvalidConfig
     );
     require!(
-        params.referral_win_share_bps as u64 <= BPS_DENOM,
+        params.referral_win_share_second_bps as u64 <= BPS_DENOM,
         LotteryError::InvalidConfig
     );
+    require!(
+        (params.referral_win_share_first_bps as u64 + params.referral_win_share_second_bps as u64)
+            <= BPS_DENOM,
+        LotteryError::InvalidConfig
+    );
+
     require!(params.draw_timeout_slots > 0, LotteryError::InvalidConfig);
-    validate_tier_payout_bps(&params.tier_payout_bps)?;
+
+    require!(
+        params.max_guarantee_per_round_bps <= MAX_GUARANTEE_PER_ROUND_BPS_CAP,
+        LotteryError::GuaranteeExceedsCap
+    );
+
+    // Premium pool floor must be sane (not exceeding 100%).
+    require!(
+        params.premium_min_allocation_bps as u64 <= BPS_DENOM,
+        LotteryError::InvalidPremiumAllocation
+    );
+
+    validate_tier_weight_bps(&params.tier_premium_weight_bps)?;
     Ok(())
 }
 
@@ -58,43 +96,68 @@ mod tests {
     use crate::state::config::UntakenTierDestination;
 
     fn valid_params() -> ConfigParams {
-        let mut tier_payout_bps = [0u16; TIER_COUNT];
-        tier_payout_bps[1] = 500;
-        tier_payout_bps[11] = 7_000;
+        let mut tier_premium_weight_bps = [0u16; TIER_COUNT];
+        // Megapot-aligned default weights summing to 10000.
+        tier_premium_weight_bps[3] = 1_200;
+        tier_premium_weight_bps[5] = 1_200;
+        tier_premium_weight_bps[6] = 1_200;
+        tier_premium_weight_bps[7] = 600;
+        tier_premium_weight_bps[8] = 600;
+        tier_premium_weight_bps[9] = 600;
+        tier_premium_weight_bps[10] = 600;
+        tier_premium_weight_bps[11] = 4_000;
+
         ConfigParams {
             default_ticket_price: 1_000_000,
             default_round_duration_secs: MIN_ROUND_DURATION_SECS,
-            register_window_secs: 0,
             guaranteed_prize_pool: 0,
+            max_guarantee_per_round_bps: 3_000,
             draw_timeout_slots: 10,
             normal_ball_max: 30,
             bonusball_max: 15,
-            lp_edge_bps: 9_000,
-            referral_fee_bps: 800,
-            referral_win_share_bps: 800,
+            lp_edge_bps: 2_000,
+            referral_fee_first_bps: 800,
+            referral_fee_second_bps: 200,
+            referral_win_share_first_bps: 800,
+            referral_win_share_second_bps: 200,
             lp_pool_cap: 0,
-            tier_payout_bps,
+            tier_premium_weight_bps,
+            tier_min_payout_per_winner: [0u64; TIER_COUNT],
+            premium_min_allocation_bps: 2_000,
             untaken_tier_destination: UntakenTierDestination::NextRound,
+            dynamic_bonusball_enabled: true,
+            bonusball_base: 5,
+            bonusball_pool_step_usdc: 10_000_000_000,
         }
     }
 
     #[test]
-    fn validate_params_allows_zero_guarantee() {
+    fn validate_params_accepts_megapot_defaults() {
         validate_params(&valid_params()).unwrap();
     }
 
     #[test]
-    fn validate_params_rejects_zero_draw_timeout() {
+    fn rejects_fee_split_below_prize_floor() {
         let mut params = valid_params();
-        params.draw_timeout_slots = 0;
+        params.lp_edge_bps = 5_500;
+        params.referral_fee_first_bps = 0;
+        params.referral_fee_second_bps = 0;
+        // Prize floor 5000 means take cannot exceed 5000.
         assert!(validate_params(&params).is_err());
     }
 
     #[test]
-    fn validate_params_rejects_fee_split_over_100_percent() {
+    fn rejects_guarantee_cap_too_high() {
         let mut params = valid_params();
-        params.lp_edge_bps = 9_500;
-        params.referral_fee_bps = 800;
+        params.max_guarantee_per_round_bps = 9_500;
+        assert!(validate_params(&params).is_err());
+    }
+
+    #[test]
+    fn rejects_weights_not_summing_to_10000() {
+        let mut params = valid_params();
+        params.tier_premium_weight_bps = [0u16; TIER_COUNT];
+        params.tier_premium_weight_bps[11] = 9_000;
         assert!(validate_params(&params).is_err());
     }
 }
@@ -190,6 +253,8 @@ pub fn initialize_config(ctx: Context<InitializeConfig>, params: ConfigParams) -
     lp_vault.total_shares = 0;
     lp_vault.total_assets = 0;
     lp_vault.pending_withdraw_shares = 0;
+    lp_vault.lifetime_edge_earned = 0;
+    lp_vault.lifetime_jackpot_loss = 0;
 
     emit!(ConfigInitialized {
         admin: config.admin,

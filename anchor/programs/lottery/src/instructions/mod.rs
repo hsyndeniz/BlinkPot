@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod claim;
+pub mod compound;
 pub mod draw;
 pub mod emergency;
 pub mod lp;
@@ -10,6 +11,7 @@ pub mod ticket;
 
 pub use admin::*;
 pub use claim::*;
+pub use compound::*;
 pub use draw::*;
 pub use emergency::*;
 pub use lp::*;

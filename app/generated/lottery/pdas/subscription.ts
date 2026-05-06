@@ -23,7 +23,7 @@ export async function findSubscriptionPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "GAmpA5BkYnV1dsYfVkYwuVz7LxQai5QRkBSnZp6BVVH" as Address<"GAmpA5BkYnV1dsYfVkYwuVz7LxQai5QRkBSnZp6BVVH">,
+    programAddress = "348H4GCNY1nAp1bUoG2rAZFkEXwiw5zW4aXLC5dvVN7c" as Address<"348H4GCNY1nAp1bUoG2rAZFkEXwiw5zW4aXLC5dvVN7c">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

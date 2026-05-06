@@ -10,7 +10,8 @@ use crate::constants::{
 };
 use crate::errors::LotteryError;
 use crate::events::{SubscriptionCanceled, SubscriptionCreated, SubscriptionProcessed};
-use crate::math::{bps_amount, validate_pick};
+use crate::instructions::ticket::compute_per_ticket_fees;
+use crate::math::validate_pick;
 use crate::state::buyer_entry::BuyerEntry;
 use crate::state::config::Config;
 use crate::state::lp::LpVault;
@@ -102,9 +103,6 @@ pub fn subscribe_daily(
         );
     }
 
-    // Re-create path safety: this instruction may run against an existing
-    // subscription PDA (init_if_needed). Only allow if not active and the
-    // tracked escrow balance is zero.
     if ctx.accounts.subscription.owner != Pubkey::default() {
         require_keys_eq!(
             ctx.accounts.subscription.owner,
@@ -253,6 +251,9 @@ pub struct ProcessSubscription<'info> {
     #[account(mut)]
     pub referrer_account: Option<Box<Account<'info, Referral>>>,
 
+    #[account(mut)]
+    pub parent_referrer_account: Option<Box<Account<'info, Referral>>>,
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
@@ -294,7 +295,7 @@ pub fn process_subscription<'info>(
         return Err(error!(LotteryError::SubscriptionPriceChanged));
     }
 
-    if subscription.has_referrer {
+    let (parent_referrer_pubkey, has_parent_referrer) = if subscription.has_referrer {
         let ra = ctx
             .accounts
             .referrer_account
@@ -306,12 +307,43 @@ pub fn process_subscription<'info>(
         );
         require_keys_eq!(ra.key(), expected_pda, LotteryError::InvalidConfig);
         require_keys_eq!(ra.owner, subscription.referrer, LotteryError::InvalidConfig);
+
+        if ra.has_parent {
+            let parent = ctx
+                .accounts
+                .parent_referrer_account
+                .as_ref()
+                .ok_or(error!(LotteryError::ReferralRequired))?;
+            let (expected_parent_pda, _) = Pubkey::find_program_address(
+                &[REFERRAL_SEED, ra.parent_referrer.as_ref()],
+                ctx.program_id,
+            );
+            require_keys_eq!(
+                parent.key(),
+                expected_parent_pda,
+                LotteryError::ParentReferrerMismatch
+            );
+            require_keys_eq!(
+                parent.owner,
+                ra.parent_referrer,
+                LotteryError::ParentReferrerMismatch
+            );
+            (ra.parent_referrer, true)
+        } else {
+            require!(
+                ctx.accounts.parent_referrer_account.is_none(),
+                LotteryError::InvalidConfig
+            );
+            (Pubkey::default(), false)
+        }
     } else {
         require!(
-            ctx.accounts.referrer_account.is_none(),
+            ctx.accounts.referrer_account.is_none()
+                && ctx.accounts.parent_referrer_account.is_none(),
             LotteryError::InvalidConfig
         );
-    }
+        (Pubkey::default(), false)
+    };
 
     require!(
         picks.len() == subscription.daily_ticket_count as usize,
@@ -338,21 +370,27 @@ pub fn process_subscription<'info>(
         LotteryError::SubscriptionInactive
     );
 
-    let referral_fee_per = if subscription.has_referrer {
-        bps_amount(ticket_price, ctx.accounts.config.referral_fee_bps)?
-    } else {
-        0
-    };
-    let referral_fee_total = referral_fee_per
+    let fees = compute_per_ticket_fees(
+        ticket_price,
+        &ctx.accounts.config,
+        subscription.has_referrer,
+        has_parent_referrer,
+    )?;
+    let lp_edge_total = fees
+        .lp_edge
         .checked_mul(count)
         .ok_or(error!(LotteryError::MathOverflow))?;
-    let lp_edge_per = bps_amount(ticket_price, ctx.accounts.config.lp_edge_bps)?;
-    let lp_edge_total = lp_edge_per
+    let referral_first_total = fees
+        .referral_first
         .checked_mul(count)
         .ok_or(error!(LotteryError::MathOverflow))?;
-    let ticket_prize_contribution = total_paid
-        .checked_sub(referral_fee_total)
-        .and_then(|n| n.checked_sub(lp_edge_total))
+    let referral_second_total = fees
+        .referral_second
+        .checked_mul(count)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    let ticket_prize_contribution = fees
+        .prize_pool
+        .checked_mul(count)
         .ok_or(error!(LotteryError::MathOverflow))?;
 
     let buyer_entry = &mut ctx.accounts.buyer_entry;
@@ -426,12 +464,14 @@ pub fn process_subscription<'info>(
             owner: owner_key,
             buyer: owner_key,
             referrer: subscription.referrer,
+            parent_referrer: parent_referrer_pubkey,
             has_referrer: subscription.has_referrer,
+            has_parent_referrer,
             purchased_at: now,
             price_paid: ticket_price,
             normals: pick.normals,
             bonusball: pick.bonusball,
-            registered: false,
+            tallied: false,
             claimed: false,
             tier: 0,
             bump,
@@ -467,10 +507,13 @@ pub fn process_subscription<'info>(
             lp_edge_total,
             ctx.accounts.usdc_mint.decimals,
         )?;
-        ctx.accounts.lp_vault.total_assets = ctx
-            .accounts
-            .lp_vault
+        let lp_vault = &mut ctx.accounts.lp_vault;
+        lp_vault.total_assets = lp_vault
             .total_assets
+            .checked_add(lp_edge_total)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+        lp_vault.lifetime_edge_earned = lp_vault
+            .lifetime_edge_earned
             .checked_add(lp_edge_total)
             .ok_or(error!(LotteryError::MathOverflow))?;
     }
@@ -498,18 +541,32 @@ pub fn process_subscription<'info>(
     if let Some(referrer_account) = ctx.accounts.referrer_account.as_mut() {
         referrer_account.accrued = referrer_account
             .accrued
-            .checked_add(referral_fee_total)
+            .checked_add(referral_first_total)
             .ok_or(error!(LotteryError::MathOverflow))?;
-        referrer_account.lifetime_earned = referrer_account
-            .lifetime_earned
-            .checked_add(referral_fee_total)
-            .ok_or(error!(LotteryError::MathOverflow))?;
-        round.referral_fees_accrued = round
-            .referral_fees_accrued
-            .checked_add(referral_fee_total)
+        referrer_account.lifetime_earned_first = referrer_account
+            .lifetime_earned_first
+            .checked_add(referral_first_total)
             .ok_or(error!(LotteryError::MathOverflow))?;
     }
 
+    if let Some(p_account) = ctx.accounts.parent_referrer_account.as_mut() {
+        p_account.accrued = p_account
+            .accrued
+            .checked_add(referral_second_total)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+        p_account.lifetime_earned_second = p_account
+            .lifetime_earned_second
+            .checked_add(referral_second_total)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+    }
+
+    let total_referrals = referral_first_total
+        .checked_add(referral_second_total)
+        .ok_or(error!(LotteryError::MathOverflow))?;
+    round.referral_fees_accrued = round
+        .referral_fees_accrued
+        .checked_add(total_referrals)
+        .ok_or(error!(LotteryError::MathOverflow))?;
     round.prize_pool = round
         .prize_pool
         .checked_add(ticket_prize_contribution)

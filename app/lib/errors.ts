@@ -19,7 +19,7 @@ const VAULT_ERROR_CODES: Record<number, VaultError> = {
 };
 
 const LOTTERY_ERROR_MIN = 0x1770;
-const LOTTERY_ERROR_MAX = 0x17a2;
+const LOTTERY_ERROR_MAX = 0x17a8;
 
 export function parseTransactionError(err: unknown): string {
   // Wallet rejection (comes from wallet-standard, not a SolanaError)

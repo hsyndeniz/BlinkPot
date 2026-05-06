@@ -123,6 +123,13 @@ pub struct EmergencyRefundTicket<'info> {
 
     #[account(
         mut,
+        seeds = [REFERRAL_SEED, ticket.parent_referrer.as_ref()],
+        bump,
+    )]
+    pub parent_referrer_account: Option<Box<Account<'info, Referral>>>,
+
+    #[account(
+        mut,
         token::mint = usdc_mint,
         token::authority = owner,
     )]
@@ -143,31 +150,49 @@ pub fn emergency_refund_ticket(ctx: Context<EmergencyRefundTicket>) -> Result<()
     require!(!ticket.claimed, LotteryError::TicketAlreadyClaimed);
 
     let refund = ticket.price_paid;
+
+    // Claw back any unclaimed referral accrual on this ticket so the protocol
+    // doesn't pay both the buyer (refund) and the referrer (purchase fee) for
+    // a round that never resolved. Already-claimed fees are kept (they're
+    // outside our reach), only what's still in `accrued` can be reduced.
     if ticket.has_referrer {
-        let referral_fee = bps_amount(ticket.price_paid, ctx.accounts.config.referral_fee_bps)?;
-        let referrer_account = ctx
+        let first_fee =
+            bps_amount(ticket.price_paid, ctx.accounts.config.referral_fee_first_bps)?;
+        let r = ctx
             .accounts
             .referrer_account
             .as_mut()
             .ok_or(error!(LotteryError::ReferralRequired))?;
-        require_keys_eq!(
-            referrer_account.owner,
-            ticket.referrer,
-            LotteryError::InvalidConfig
-        );
-        // A referrer may have already claimed some or all of this accrual before
-        // the round was moved to emergency. Do not block the buyer's refund; just
-        // cancel whatever liability is still outstanding for this referrer PDA.
-        let clawback = referral_fee.min(referrer_account.accrued);
-        referrer_account.accrued = referrer_account
-            .accrued
-            .checked_sub(clawback)
-            .ok_or(error!(LotteryError::MathOverflow))?;
-        referrer_account.lifetime_earned =
-            referrer_account.lifetime_earned.saturating_sub(clawback);
+        require_keys_eq!(r.owner, ticket.referrer, LotteryError::InvalidConfig);
+        let clawback = first_fee.min(r.accrued);
+        r.accrued = r.accrued.checked_sub(clawback).ok_or(error!(LotteryError::MathOverflow))?;
+        r.lifetime_earned_first = r.lifetime_earned_first.saturating_sub(clawback);
     } else {
         require!(
             ctx.accounts.referrer_account.is_none(),
+            LotteryError::InvalidConfig
+        );
+    }
+
+    if ticket.has_parent_referrer {
+        let second_fee =
+            bps_amount(ticket.price_paid, ctx.accounts.config.referral_fee_second_bps)?;
+        let p = ctx
+            .accounts
+            .parent_referrer_account
+            .as_mut()
+            .ok_or(error!(LotteryError::ReferralRequired))?;
+        require_keys_eq!(
+            p.owner,
+            ticket.parent_referrer,
+            LotteryError::ParentReferrerMismatch
+        );
+        let clawback = second_fee.min(p.accrued);
+        p.accrued = p.accrued.checked_sub(clawback).ok_or(error!(LotteryError::MathOverflow))?;
+        p.lifetime_earned_second = p.lifetime_earned_second.saturating_sub(clawback);
+    } else {
+        require!(
+            ctx.accounts.parent_referrer_account.is_none(),
             LotteryError::InvalidConfig
         );
     }

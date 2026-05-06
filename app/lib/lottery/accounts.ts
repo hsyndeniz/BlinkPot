@@ -6,6 +6,7 @@ import {
   fetchAllMaybeRound,
   fetchAllMaybeTicket,
   fetchMaybeBuyerEntry,
+  fetchMaybeCompoundState,
   fetchMaybeConfig,
   fetchMaybeLpPosition,
   fetchMaybeLpVault,
@@ -15,8 +16,8 @@ import {
   fetchMaybeSubscription,
   getTicketDecoder,
   getTicketDiscriminatorBytes,
-  getTicketSize,
   type BuyerEntry,
+  type CompoundState,
   type Config,
   type LpPosition,
   type LpVault,
@@ -31,6 +32,7 @@ import { useCluster } from "../../components/cluster-context";
 import { useSolanaClient } from "../solana-client-context";
 import {
   findBuyerEntryPda,
+  findCompoundStatePda,
   findConfigPda,
   findLpVaultPda,
   findPositionPda,
@@ -553,6 +555,46 @@ export function useTickets(roundId?: bigint | number, owner?: Address) {
   };
 }
 
+export function useCompoundState(owner?: Address) {
+  const { cluster } = useCluster();
+  const client = useSolanaClient();
+
+  const address = useSWR(
+    owner ? (["lottery", "pda", "compoundState", owner] as const) : null,
+    async ([, , , compoundOwner]) =>
+      pdaAddress(await findCompoundStatePda({ buyer: compoundOwner })),
+    { revalidateOnFocus: false }
+  );
+
+  const result = useSWR(
+    address.data
+      ? ([
+          "lottery",
+          "account",
+          "compoundState",
+          cluster,
+          owner,
+          address.data,
+        ] as const)
+      : null,
+    async ([, , , , , compoundAddress]) =>
+      fetchMaybeCompoundState(client.rpc, compoundAddress, {
+        commitment: "confirmed",
+      }),
+    { revalidateOnFocus: true }
+  );
+
+  useAccountSubscription(address.data, () => result.mutate());
+
+  return {
+    ...result,
+    address: address.data,
+    account: result.data as MaybeAccount<CompoundState> | undefined,
+    compoundState: exists(result.data) ? result.data.data : undefined,
+    exists: !!result.data?.exists,
+  };
+}
+
 export function useTicketScan(roundId?: bigint | number) {
   const { cluster } = useCluster();
   const client = useSolanaClient();
@@ -574,7 +616,10 @@ export function useTicketScan(roundId?: bigint | number) {
           commitment: "confirmed",
           encoding: "base64",
           filters: [
-            { dataSize: BigInt(getTicketSize()) },
+            // Note: dataSize filter omitted intentionally — Ticket::LEN is
+            // the authoritative size; getProgramAccounts matches full account
+            // allocation which may differ across deployments. Discriminator +
+            // round_id memcmp together are already unique identifiers.
             {
               memcmp: {
                 offset: 0n,
