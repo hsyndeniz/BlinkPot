@@ -72,7 +72,7 @@ export type BuyTicketsInstruction<
   TAccountBuyer extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountBuyerTokenAccount extends string | AccountMeta<string> = string,
   TAccountPrizeVault extends string | AccountMeta<string> = string,
   TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
@@ -103,9 +103,9 @@ export type BuyTicketsInstruction<
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
         : TAccountRound,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountBuyerTokenAccount extends string
         ? WritableAccount<TAccountBuyerTokenAccount>
         : TAccountBuyerTokenAccount,
@@ -190,7 +190,7 @@ export type BuyTicketsAsyncInput<
   TAccountBuyer extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountBuyerTokenAccount extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
@@ -207,7 +207,7 @@ export type BuyTicketsAsyncInput<
   buyer: TransactionSigner<TAccountBuyer>;
   config?: Address<TAccountConfig>;
   round: Address<TAccountRound>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   buyerTokenAccount: Address<TAccountBuyerTokenAccount>;
   prizeVault?: Address<TAccountPrizeVault>;
   prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
@@ -230,7 +230,7 @@ export async function getBuyTicketsInstructionAsync<
   TAccountBuyer extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountBuyerTokenAccount extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
@@ -249,7 +249,7 @@ export async function getBuyTicketsInstructionAsync<
     TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountBuyerTokenAccount,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -270,7 +270,7 @@ export async function getBuyTicketsInstructionAsync<
     TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountBuyerTokenAccount,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -293,7 +293,7 @@ export async function getBuyTicketsInstructionAsync<
     buyer: { value: input.buyer ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     buyerTokenAccount: {
       value: input.buyerTokenAccount ?? null,
       isWritable: true,
@@ -330,7 +330,7 @@ export async function getBuyTicketsInstructionAsync<
   }
   if (!accounts.prizeVault.value) {
     accounts.prizeVault.value = await findPrizeVaultPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.prizeVaultAuthority.value) {
@@ -344,7 +344,7 @@ export async function getBuyTicketsInstructionAsync<
   }
   if (!accounts.lpPrincipal.value) {
     accounts.lpPrincipal.value = await findLpPrincipalPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.tokenProgram.value) {
@@ -366,7 +366,7 @@ export async function getBuyTicketsInstructionAsync<
       getAccountMeta(accounts.buyer),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.buyerTokenAccount),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
@@ -389,7 +389,7 @@ export async function getBuyTicketsInstructionAsync<
     TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountBuyerTokenAccount,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -409,7 +409,7 @@ export type BuyTicketsInput<
   TAccountBuyer extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountBuyerTokenAccount extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
@@ -426,7 +426,7 @@ export type BuyTicketsInput<
   buyer: TransactionSigner<TAccountBuyer>;
   config: Address<TAccountConfig>;
   round: Address<TAccountRound>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   buyerTokenAccount: Address<TAccountBuyerTokenAccount>;
   prizeVault: Address<TAccountPrizeVault>;
   prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
@@ -449,7 +449,7 @@ export function getBuyTicketsInstruction<
   TAccountBuyer extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountBuyerTokenAccount extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
@@ -468,7 +468,7 @@ export function getBuyTicketsInstruction<
     TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountBuyerTokenAccount,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -488,7 +488,7 @@ export function getBuyTicketsInstruction<
   TAccountBuyer,
   TAccountConfig,
   TAccountRound,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountBuyerTokenAccount,
   TAccountPrizeVault,
   TAccountPrizeVaultAuthority,
@@ -510,7 +510,7 @@ export function getBuyTicketsInstruction<
     buyer: { value: input.buyer ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     buyerTokenAccount: {
       value: input.buyerTokenAccount ?? null,
       isWritable: true,
@@ -561,7 +561,7 @@ export function getBuyTicketsInstruction<
       getAccountMeta(accounts.buyer),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.buyerTokenAccount),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
@@ -584,7 +584,7 @@ export function getBuyTicketsInstruction<
     TAccountBuyer,
     TAccountConfig,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountBuyerTokenAccount,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -609,7 +609,7 @@ export type ParsedBuyTicketsInstruction<
     buyer: TAccountMetas[0];
     config: TAccountMetas[1];
     round: TAccountMetas[2];
-    usdcMint: TAccountMetas[3];
+    paymentMint: TAccountMetas[3];
     buyerTokenAccount: TAccountMetas[4];
     prizeVault: TAccountMetas[5];
     prizeVaultAuthority: TAccountMetas[6];
@@ -658,7 +658,7 @@ export function parseBuyTicketsInstruction<
       buyer: getNextAccount(),
       config: getNextAccount(),
       round: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       buyerTokenAccount: getNextAccount(),
       prizeVault: getNextAccount(),
       prizeVaultAuthority: getNextAccount(),

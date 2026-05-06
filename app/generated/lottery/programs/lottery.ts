@@ -69,6 +69,7 @@ export enum LotteryAccount {
   Config,
   LpPosition,
   LpVault,
+  PickCounter,
   Referral,
   Round,
   RoundCounter,
@@ -123,6 +124,17 @@ export function identifyLotteryAccount(
     )
   ) {
     return LotteryAccount.LpVault;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([52, 255, 28, 33, 84, 241, 111, 213]),
+      ),
+      0,
+    )
+  ) {
+    return LotteryAccount.PickCounter;
   }
   if (
     containsBytes(

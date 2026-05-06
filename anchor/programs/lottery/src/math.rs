@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::{
-    BPS_DENOM, INITIAL_SHARES_PER_USDC, MAX_BONUSBALL_MAX, MIN_BONUSBALL_MAX, NORMAL_BALL_COUNT,
-    NORMAL_BALL_MIN, SHARE_SCALE, TIER_COUNT,
+    BPS_DENOM, INITIAL_SHARES_PER_TOKEN_UNIT, MAX_BONUSBALL_MAX, MIN_BONUSBALL_MAX,
+    NORMAL_BALL_COUNT, NORMAL_BALL_MIN, SHARE_SCALE, TIER_COUNT,
 };
 use crate::errors::LotteryError;
 
@@ -109,10 +109,17 @@ pub fn derive_winning_numbers(
     }
     chosen[..NORMAL_BALL_COUNT].sort();
 
+    // Rejection-sample the bonus ball. Per attempt we mix `randomness_bytes[31 - i%32]`
+    // with a counter-derived mask so the same byte gives different candidates across
+    // passes, then accept only if the candidate is below the largest multiple of
+    // `bonusball_max` that fits in a byte (avoids modulo bias). 64 attempts ⇒ rejection
+    // probability is at most (4/256)^64 ≈ 1e-115 — practically unreachable. If we do
+    // exhaust attempts we error rather than fall back to a biased modulo, since silent
+    // bias on the winning bonus ball would distort tier-payout fairness.
     let bonus_range = bonusball_max as u16;
     let bonus_threshold = 256u16 - (256u16 % bonus_range);
     let mut bonus: u8 = 0;
-    for attempt in 0u8..8u8 {
+    for attempt in 0u8..64u8 {
         let raw = randomness_bytes[31usize - (attempt as usize % 32)];
         let b = raw ^ attempt.wrapping_mul(53u8);
         if (b as u16) < bonus_threshold {
@@ -120,9 +127,7 @@ pub fn derive_winning_numbers(
             break;
         }
     }
-    if bonus == 0 {
-        bonus = 1 + (randomness_bytes[31] % bonusball_max);
-    }
+    require!(bonus != 0, LotteryError::RandomnessDerivationFailed);
 
     Ok((chosen, bonus))
 }
@@ -134,7 +139,7 @@ pub fn shares_for_deposit(
 ) -> Result<u128> {
     if total_shares == 0 || total_assets == 0 {
         return (deposit_amount as u128)
-            .checked_mul(INITIAL_SHARES_PER_USDC)
+            .checked_mul(INITIAL_SHARES_PER_TOKEN_UNIT)
             .ok_or(error!(LotteryError::MathOverflow));
     }
     let numerator = (deposit_amount as u128)
@@ -194,12 +199,13 @@ pub fn validate_tier_weight_bps(
 }
 
 /// Compute the bonusball maximum based on the prize pool.
-/// `base + (pool_usdc / step)` clamped to [MIN_BONUSBALL_MAX, MAX_BONUSBALL_MAX].
-pub fn compute_dynamic_bonusball(prize_pool_usdc: u64, base: u8, step: u64) -> u8 {
+/// `base + (pool_units / step)` clamped to [MIN_BONUSBALL_MAX, MAX_BONUSBALL_MAX].
+/// Both `prize_pool_units` and `step` are in payment-mint base units.
+pub fn compute_dynamic_bonusball(prize_pool_units: u64, base: u8, step: u64) -> u8 {
     if step == 0 {
         return base.max(MIN_BONUSBALL_MAX).min(MAX_BONUSBALL_MAX);
     }
-    let extra = prize_pool_usdc / step;
+    let extra = prize_pool_units / step;
     let raw = (base as u64).saturating_add(extra);
     let clamped = raw.min(MAX_BONUSBALL_MAX as u64);
     let result = clamped.max(MIN_BONUSBALL_MAX as u64);
@@ -253,24 +259,33 @@ fn binomial(n: u64, k: u64) -> u64 {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PayoutPlan {
-    pub payout_per_winner: [u64; TIER_COUNT],
+    /// Per-(winning) combo payout for each tier — the value covers ONE combo's full
+    /// share. At claim time it is divided by the number of tickets sharing that exact
+    /// pick (tracked via PickCounter), so all duplicate winners split a combo's
+    /// allocation evenly and the tier's premium budget is never exceeded.
+    pub per_combo_payout: [u64; TIER_COUNT],
     pub used_minimum_payouts: bool,
 }
 
-/// Compute the fixed per-winner payout for each tier, given the frozen prize pool and
-/// configured weights/minimums. The split between guaranteed minimums and premium pool
-/// is decided once here, at reveal time, using the Megapot two-step model:
+/// Compute the per-combo payout for each tier from the frozen prize pool, configured
+/// weights/minimums, and ball ranges. Called inline by `reveal_draw` — no
+/// register/finalize handshake is required, because PickCounter PDAs already track
+/// duplicates at buy time.
 ///
-///   1. min_alloc_total = sum over winning tiers of `min[t] * combos[t]`
-///      (combinatorial worst case — every possible winning combo is sold once).
-///   2. If `min_alloc_total + premium_floor <= prize_pool`, mins are used and
-///      `premium_pool = prize_pool - min_alloc_total`. Otherwise mins are skipped
+///   1. mins_total = sum over winning tiers of `min[t] * combos[t]` (worst-case where
+///      every combo is bought and claimed). Conservative — leftover from unsold combos
+///      rolls over via `archive_round`.
+///   2. If `mins_total + premium_floor <= prize_pool`, minimums are used and
+///      `premium_pool = prize_pool - mins_total`. Otherwise mins are skipped
 ///      (`premium_pool = prize_pool`).
-///   3. For each winning tier:
-///        payout_per_winner[t] = min_effective[t] + (premium_pool * weight[t] / 10000) / combos[t]
+///   3. For each winning tier with combos > 0:
+///        per_combo_payout[t] = min_effective[t] + (premium_pool * weight[t] / 10000) / combos[t]
 ///
-/// Non-winning tiers (and tiers with zero combos) get payout 0.
-pub fn compute_payouts_per_winner(
+/// At claim time, `gross = per_combo_payout[tier] / pick_counter.count`, so:
+/// - 1 winner per combo → full per_combo_payout
+/// - N winners on the same combo → each gets per_combo_payout / N
+/// Total paid per tier ≤ (combos[t]) * per_combo_payout[t] = its full allocation.
+pub fn compute_per_combo_payouts(
     prize_pool: u64,
     normal_max: u8,
     bonus_max: u8,
@@ -281,18 +296,19 @@ pub fn compute_payouts_per_winner(
 ) -> Result<PayoutPlan> {
     let combos = tier_combos_table(normal_max, bonus_max);
 
-    // Step 1 — sum potential guaranteed-minimum allocation (across winning tiers).
+    // Step 1 — worst-case minimum allocation across all combos in winning tiers.
     let mut min_alloc_total: u64 = 0;
     for t in 0..TIER_COUNT {
         if !tier_is_winning[t] {
             continue;
         }
         let m = tier_min_payout_per_winner[t];
-        if m == 0 || combos[t] == 0 {
+        let c = combos[t];
+        if m == 0 || c == 0 {
             continue;
         }
         let tier_min = m
-            .checked_mul(combos[t])
+            .checked_mul(c)
             .ok_or(error!(LotteryError::MathOverflow))?;
         min_alloc_total = min_alloc_total
             .checked_add(tier_min)
@@ -314,10 +330,14 @@ pub fn compute_payouts_per_winner(
         prize_pool
     };
 
-    // Step 3 — per-winner payout per tier.
+    // Step 3 — per-combo payout per tier.
     let mut payout = [0u64; TIER_COUNT];
     for t in 0..TIER_COUNT {
-        if !tier_is_winning[t] || combos[t] == 0 {
+        if !tier_is_winning[t] {
+            continue;
+        }
+        let c = combos[t];
+        if c == 0 {
             continue;
         }
         let weight = tier_premium_weight_bps[t];
@@ -326,19 +346,19 @@ pub fn compute_payouts_per_winner(
         } else {
             bps_amount(premium_pool, weight)?
         };
-        let premium_per_winner = tier_premium / combos[t];
+        let premium_per_combo = tier_premium / c;
         let min_per_winner = if used_minimum_payouts {
             tier_min_payout_per_winner[t]
         } else {
             0
         };
-        payout[t] = premium_per_winner
+        payout[t] = premium_per_combo
             .checked_add(min_per_winner)
             .ok_or(error!(LotteryError::MathOverflow))?;
     }
 
     Ok(PayoutPlan {
-        payout_per_winner: payout,
+        per_combo_payout: payout,
         used_minimum_payouts,
     })
 }
@@ -459,7 +479,7 @@ mod tests {
 
     #[test]
     fn payout_premium_only_path() {
-        let plan = compute_payouts_per_winner(
+        let plan = compute_per_combo_payouts(
             1_000_000_000,
             30,
             15,
@@ -470,16 +490,15 @@ mod tests {
         )
         .unwrap();
         assert!(!plan.used_minimum_payouts);
-        // jackpot: 100% of 1B / 1 combo = 1B
-        assert_eq!(plan.payout_per_winner[11], 1_000_000_000);
-        // tier 0 non-winning -> 0
-        assert_eq!(plan.payout_per_winner[0], 0);
-        assert_eq!(plan.payout_per_winner[2], 0);
+        // jackpot combo gets the full premium pool (combos[11]=1, weight=10_000bps).
+        assert_eq!(plan.per_combo_payout[11], 1_000_000_000);
+        assert_eq!(plan.per_combo_payout[0], 0);
+        assert_eq!(plan.per_combo_payout[2], 0);
     }
 
     #[test]
     fn payout_uses_megapot_default_weights() {
-        let plan = compute_payouts_per_winner(
+        let plan = compute_per_combo_payouts(
             1_000_000_000,
             30,
             15,
@@ -489,18 +508,75 @@ mod tests {
             0,
         )
         .unwrap();
-        // jackpot tier (5+B): 4000bps of 1B = 400M, 1 combo => 400M per winner
-        assert_eq!(plan.payout_per_winner[11], 400_000_000);
-        // 5 no bonus: 600bps of 1B = 60M, 14 combos => 4_285_714
-        assert_eq!(plan.payout_per_winner[10], 60_000_000 / 14);
+        // jackpot tier (5+B): 4000bps of 1B = 400M, combos=1 → 400M per combo
+        assert_eq!(plan.per_combo_payout[11], 400_000_000);
+        // 5 no bonus: 600bps of 1B = 60M, combos=14 → 4_285_714 per combo
+        assert_eq!(plan.per_combo_payout[10], 60_000_000 / 14);
+    }
+
+    /// Adversarial replay of C1: 5 tickets share the winning jackpot combo. With the
+    /// old "split-by-combos" math each got the full per-combo amount and the pool
+    /// over-drew by 5x. Under the per-combo + PickCounter model the per-combo amount
+    /// is paid once across all duplicates (each gets 1/5).
+    #[test]
+    fn duplicate_jackpot_winners_split_premium_correctly() {
+        let plan = compute_per_combo_payouts(
+            1_000_000_000,
+            30,
+            15,
+            &MEGAPOT_TIER_IS_WINNING,
+            &weights_jackpot_only(),
+            &no_mins(),
+            0,
+        )
+        .unwrap();
+        // per-combo payout = full pool. 5 winners on this combo each receive
+        // per_combo_payout / 5 = 200M at claim time.
+        assert_eq!(plan.per_combo_payout[11], 1_000_000_000);
+        let counter: u64 = 5;
+        let per_winner = plan.per_combo_payout[11] / counter;
+        assert_eq!(per_winner, 200_000_000);
+        let total_paid = per_winner * counter;
+        // Total never exceeds the per-combo allocation (which is the full premium here).
+        assert_eq!(total_paid, 1_000_000_000);
+    }
+
+    /// Even with massive duplicate concentration in low-combo tiers, total payout
+    /// per tier is bounded by `combos[t] * per_combo_payout[t]` (its full allocation).
+    #[test]
+    fn many_duplicates_never_overdraw_pool() {
+        let plan = compute_per_combo_payouts(
+            1_000_000_000,
+            30,
+            15,
+            &MEGAPOT_TIER_IS_WINNING,
+            &MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
+            &no_mins(),
+            0,
+        )
+        .unwrap();
+        // tier 11: 4000 bps → 400M, combos=1 → 400M per combo. 10 duplicates → 40M each.
+        let t11_per_winner = plan.per_combo_payout[11] / 10;
+        assert_eq!(t11_per_winner, 40_000_000);
+        // tier 10: 600 bps → 60M, combos=14 → ~4.28M per combo. 50 duplicates split
+        // across e.g. 14 combos at most; even worst-case 50 on a single combo → 85.7K each.
+        // The bound is per-combo: combos[t] * per_combo_payout[t] ≤ tier allocation.
+        let tier_10_total_ceiling = 14u64 * plan.per_combo_payout[10];
+        assert!(tier_10_total_ceiling <= 60_000_000);
+        // Sum of (combos[t] * per_combo_payout[t]) across all tiers ≤ prize pool.
+        let combos = tier_combos_table(30, 15);
+        let max_total: u64 = (0..TIER_COUNT)
+            .map(|t| plan.per_combo_payout[t].saturating_mul(combos[t]))
+            .sum();
+        assert!(max_total <= 1_000_000_000);
     }
 
     #[test]
     fn payout_skips_minimums_when_too_large() {
-        // huge per-tier minimum, small pool — minimums won't fit, fall back to premium-only.
+        // Huge per-tier minimum across all combos — won't fit alongside the premium floor.
         let mut mins = [0u64; TIER_COUNT];
-        mins[1] = 1_000_000_000; // 1000 USDC for the bonusball-only tier
-        let plan = compute_payouts_per_winner(
+        mins[1] = 1_000_000_000;
+        let plan = compute_per_combo_payouts(
             10_000_000,
             30,
             15,
@@ -511,5 +587,23 @@ mod tests {
         )
         .unwrap();
         assert!(!plan.used_minimum_payouts);
+    }
+
+    #[test]
+    fn no_winning_tiers_yields_zero_payouts() {
+        let no_winning = [false; TIER_COUNT];
+        let plan = compute_per_combo_payouts(
+            1_000_000_000,
+            30,
+            15,
+            &no_winning,
+            &[0u16; TIER_COUNT],
+            &no_mins(),
+            0,
+        )
+        .unwrap();
+        for t in 0..TIER_COUNT {
+            assert_eq!(plan.per_combo_payout[t], 0);
+        }
     }
 }

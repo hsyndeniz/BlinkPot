@@ -10,6 +10,7 @@ export * from "./buyerEntry";
 export * from "./config";
 export * from "./lpPosition";
 export * from "./lpVault";
+export * from "./pickCounter";
 export * from "./referral";
 export * from "./round";
 export * from "./roundCounter";

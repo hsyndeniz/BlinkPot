@@ -24,11 +24,6 @@ pub struct Ticket {
     pub bonusball: u8,
     pub claimed: bool,
     pub bump: u8,
-    /// Set by `register_winner` once a ticket has been counted toward its tier's
-    /// winner_count. A ticket must be registered before it can be claimed.
-    pub registered: bool,
-    /// Tier id assigned at registration time. Meaningful only when `registered = true`.
-    pub tier: u8,
 }
 
 impl Ticket {
@@ -40,6 +35,5 @@ impl Ticket {
         + 8                                  // purchased_at
         + 8                                  // price_paid
         + NORMAL_BALL_COUNT + 1              // normals, bonusball
-        + 1 + 1                              // claimed, bump
-        + 1 + 1;                             // registered, tier
+        + 1 + 1;                             // claimed, bump
 }

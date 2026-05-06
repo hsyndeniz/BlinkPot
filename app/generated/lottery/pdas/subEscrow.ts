@@ -16,7 +16,7 @@ import {
 
 export type SubEscrowSeeds = {
   owner: Address;
-  usdcMint: Address;
+  paymentMint: Address;
 };
 
 export async function findSubEscrowPda(
@@ -33,7 +33,7 @@ export async function findSubEscrowPda(
         new Uint8Array([115, 117, 98, 95, 101, 115, 99, 114, 111, 119]),
       ),
       getAddressEncoder().encode(seeds.owner),
-      getAddressEncoder().encode(seeds.usdcMint),
+      getAddressEncoder().encode(seeds.paymentMint),
     ],
   });
 }

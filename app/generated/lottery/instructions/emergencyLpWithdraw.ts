@@ -60,7 +60,7 @@ export type EmergencyLpWithdrawInstruction<
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountLpVault extends string | AccountMeta<string> = string,
   TAccountPosition extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountLpPrincipal extends string | AccountMeta<string> = string,
   TAccountLpAuthority extends string | AccountMeta<string> = string,
   TAccountOwnerTokenAccount extends string | AccountMeta<string> = string,
@@ -84,9 +84,9 @@ export type EmergencyLpWithdrawInstruction<
       TAccountPosition extends string
         ? WritableAccount<TAccountPosition>
         : TAccountPosition,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountLpPrincipal extends string
         ? WritableAccount<TAccountLpPrincipal>
         : TAccountLpPrincipal,
@@ -140,7 +140,7 @@ export type EmergencyLpWithdrawAsyncInput<
   TAccountConfig extends string = string,
   TAccountLpVault extends string = string,
   TAccountPosition extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountLpPrincipal extends string = string,
   TAccountLpAuthority extends string = string,
   TAccountOwnerTokenAccount extends string = string,
@@ -150,7 +150,7 @@ export type EmergencyLpWithdrawAsyncInput<
   config?: Address<TAccountConfig>;
   lpVault?: Address<TAccountLpVault>;
   position?: Address<TAccountPosition>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   lpPrincipal?: Address<TAccountLpPrincipal>;
   lpAuthority?: Address<TAccountLpAuthority>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
@@ -162,7 +162,7 @@ export async function getEmergencyLpWithdrawInstructionAsync<
   TAccountConfig extends string,
   TAccountLpVault extends string,
   TAccountPosition extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountLpPrincipal extends string,
   TAccountLpAuthority extends string,
   TAccountOwnerTokenAccount extends string,
@@ -174,7 +174,7 @@ export async function getEmergencyLpWithdrawInstructionAsync<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -188,7 +188,7 @@ export async function getEmergencyLpWithdrawInstructionAsync<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -204,7 +204,7 @@ export async function getEmergencyLpWithdrawInstructionAsync<
     config: { value: input.config ?? null, isWritable: false },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
     position: { value: input.position ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
     ownerTokenAccount: {
@@ -232,7 +232,7 @@ export async function getEmergencyLpWithdrawInstructionAsync<
   }
   if (!accounts.lpPrincipal.value) {
     accounts.lpPrincipal.value = await findLpPrincipalPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.lpAuthority.value) {
@@ -250,7 +250,7 @@ export async function getEmergencyLpWithdrawInstructionAsync<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.lpVault),
       getAccountMeta(accounts.position),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.lpAuthority),
       getAccountMeta(accounts.ownerTokenAccount),
@@ -264,7 +264,7 @@ export async function getEmergencyLpWithdrawInstructionAsync<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -277,7 +277,7 @@ export type EmergencyLpWithdrawInput<
   TAccountConfig extends string = string,
   TAccountLpVault extends string = string,
   TAccountPosition extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountLpPrincipal extends string = string,
   TAccountLpAuthority extends string = string,
   TAccountOwnerTokenAccount extends string = string,
@@ -287,7 +287,7 @@ export type EmergencyLpWithdrawInput<
   config: Address<TAccountConfig>;
   lpVault: Address<TAccountLpVault>;
   position: Address<TAccountPosition>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   lpPrincipal: Address<TAccountLpPrincipal>;
   lpAuthority: Address<TAccountLpAuthority>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
@@ -299,7 +299,7 @@ export function getEmergencyLpWithdrawInstruction<
   TAccountConfig extends string,
   TAccountLpVault extends string,
   TAccountPosition extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountLpPrincipal extends string,
   TAccountLpAuthority extends string,
   TAccountOwnerTokenAccount extends string,
@@ -311,7 +311,7 @@ export function getEmergencyLpWithdrawInstruction<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -324,7 +324,7 @@ export function getEmergencyLpWithdrawInstruction<
   TAccountConfig,
   TAccountLpVault,
   TAccountPosition,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountLpPrincipal,
   TAccountLpAuthority,
   TAccountOwnerTokenAccount,
@@ -339,7 +339,7 @@ export function getEmergencyLpWithdrawInstruction<
     config: { value: input.config ?? null, isWritable: false },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
     position: { value: input.position ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
     ownerTokenAccount: {
@@ -366,7 +366,7 @@ export function getEmergencyLpWithdrawInstruction<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.lpVault),
       getAccountMeta(accounts.position),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.lpAuthority),
       getAccountMeta(accounts.ownerTokenAccount),
@@ -380,7 +380,7 @@ export function getEmergencyLpWithdrawInstruction<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -398,7 +398,7 @@ export type ParsedEmergencyLpWithdrawInstruction<
     config: TAccountMetas[1];
     lpVault: TAccountMetas[2];
     position: TAccountMetas[3];
-    usdcMint: TAccountMetas[4];
+    paymentMint: TAccountMetas[4];
     lpPrincipal: TAccountMetas[5];
     lpAuthority: TAccountMetas[6];
     ownerTokenAccount: TAccountMetas[7];
@@ -432,7 +432,7 @@ export function parseEmergencyLpWithdrawInstruction<
       config: getNextAccount(),
       lpVault: getNextAccount(),
       position: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       lpPrincipal: getNextAccount(),
       lpAuthority: getNextAccount(),
       ownerTokenAccount: getNextAccount(),

@@ -58,7 +58,8 @@ export type ClaimWinningsInstruction<
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
   TAccountTicket extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPickCounter extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountPrizeVault extends string | AccountMeta<string> = string,
   TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
   TAccountWinnerTokenAccount extends string | AccountMeta<string> = string,
@@ -84,9 +85,12 @@ export type ClaimWinningsInstruction<
       TAccountTicket extends string
         ? WritableAccount<TAccountTicket>
         : TAccountTicket,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPickCounter extends string
+        ? ReadonlyAccount<TAccountPickCounter>
+        : TAccountPickCounter,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountPrizeVault extends string
         ? WritableAccount<TAccountPrizeVault>
         : TAccountPrizeVault,
@@ -143,7 +147,8 @@ export type ClaimWinningsAsyncInput<
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
   TAccountTicket extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPickCounter extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountWinnerTokenAccount extends string = string,
@@ -155,7 +160,14 @@ export type ClaimWinningsAsyncInput<
   config?: Address<TAccountConfig>;
   round: Address<TAccountRound>;
   ticket: Address<TAccountTicket>;
-  usdcMint: Address<TAccountUsdcMint>;
+  /**
+   * Counter for the (round, pick) the ticket holds. Created at buy time; read-only at
+   * claim time. The counter's `count` is the divisor that ensures duplicate winners on
+   * a shared pick split that pick's allocation evenly instead of each receiving the
+   * full per-combo amount.
+   */
+  pickCounter: Address<TAccountPickCounter>;
+  paymentMint: Address<TAccountPaymentMint>;
   prizeVault?: Address<TAccountPrizeVault>;
   prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
   winnerTokenAccount: Address<TAccountWinnerTokenAccount>;
@@ -169,7 +181,8 @@ export async function getClaimWinningsInstructionAsync<
   TAccountConfig extends string,
   TAccountRound extends string,
   TAccountTicket extends string,
-  TAccountUsdcMint extends string,
+  TAccountPickCounter extends string,
+  TAccountPaymentMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountWinnerTokenAccount extends string,
@@ -183,7 +196,8 @@ export async function getClaimWinningsInstructionAsync<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPickCounter,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
@@ -199,7 +213,8 @@ export async function getClaimWinningsInstructionAsync<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPickCounter,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
@@ -217,7 +232,8 @@ export async function getClaimWinningsInstructionAsync<
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
     ticket: { value: input.ticket ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    pickCounter: { value: input.pickCounter ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
       value: input.prizeVaultAuthority ?? null,
@@ -245,7 +261,7 @@ export async function getClaimWinningsInstructionAsync<
   }
   if (!accounts.prizeVault.value) {
     accounts.prizeVault.value = await findPrizeVaultPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.prizeVaultAuthority.value) {
@@ -263,7 +279,8 @@ export async function getClaimWinningsInstructionAsync<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
       getAccountMeta(accounts.ticket),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.pickCounter),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.winnerTokenAccount),
@@ -279,7 +296,8 @@ export async function getClaimWinningsInstructionAsync<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPickCounter,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
@@ -294,7 +312,8 @@ export type ClaimWinningsInput<
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
   TAccountTicket extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPickCounter extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountWinnerTokenAccount extends string = string,
@@ -306,7 +325,14 @@ export type ClaimWinningsInput<
   config: Address<TAccountConfig>;
   round: Address<TAccountRound>;
   ticket: Address<TAccountTicket>;
-  usdcMint: Address<TAccountUsdcMint>;
+  /**
+   * Counter for the (round, pick) the ticket holds. Created at buy time; read-only at
+   * claim time. The counter's `count` is the divisor that ensures duplicate winners on
+   * a shared pick split that pick's allocation evenly instead of each receiving the
+   * full per-combo amount.
+   */
+  pickCounter: Address<TAccountPickCounter>;
+  paymentMint: Address<TAccountPaymentMint>;
   prizeVault: Address<TAccountPrizeVault>;
   prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
   winnerTokenAccount: Address<TAccountWinnerTokenAccount>;
@@ -320,7 +346,8 @@ export function getClaimWinningsInstruction<
   TAccountConfig extends string,
   TAccountRound extends string,
   TAccountTicket extends string,
-  TAccountUsdcMint extends string,
+  TAccountPickCounter extends string,
+  TAccountPaymentMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountWinnerTokenAccount extends string,
@@ -334,7 +361,8 @@ export function getClaimWinningsInstruction<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPickCounter,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
@@ -349,7 +377,8 @@ export function getClaimWinningsInstruction<
   TAccountConfig,
   TAccountRound,
   TAccountTicket,
-  TAccountUsdcMint,
+  TAccountPickCounter,
+  TAccountPaymentMint,
   TAccountPrizeVault,
   TAccountPrizeVaultAuthority,
   TAccountWinnerTokenAccount,
@@ -366,7 +395,8 @@ export function getClaimWinningsInstruction<
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
     ticket: { value: input.ticket ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    pickCounter: { value: input.pickCounter ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
       value: input.prizeVaultAuthority ?? null,
@@ -401,7 +431,8 @@ export function getClaimWinningsInstruction<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
       getAccountMeta(accounts.ticket),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.pickCounter),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.winnerTokenAccount),
@@ -417,7 +448,8 @@ export function getClaimWinningsInstruction<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPickCounter,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountWinnerTokenAccount,
@@ -437,13 +469,20 @@ export type ParsedClaimWinningsInstruction<
     config: TAccountMetas[1];
     round: TAccountMetas[2];
     ticket: TAccountMetas[3];
-    usdcMint: TAccountMetas[4];
-    prizeVault: TAccountMetas[5];
-    prizeVaultAuthority: TAccountMetas[6];
-    winnerTokenAccount: TAccountMetas[7];
-    referrerAccount?: TAccountMetas[8] | undefined;
-    parentReferrerAccount?: TAccountMetas[9] | undefined;
-    tokenProgram: TAccountMetas[10];
+    /**
+     * Counter for the (round, pick) the ticket holds. Created at buy time; read-only at
+     * claim time. The counter's `count` is the divisor that ensures duplicate winners on
+     * a shared pick split that pick's allocation evenly instead of each receiving the
+     * full per-combo amount.
+     */
+    pickCounter: TAccountMetas[4];
+    paymentMint: TAccountMetas[5];
+    prizeVault: TAccountMetas[6];
+    prizeVaultAuthority: TAccountMetas[7];
+    winnerTokenAccount: TAccountMetas[8];
+    referrerAccount?: TAccountMetas[9] | undefined;
+    parentReferrerAccount?: TAccountMetas[10] | undefined;
+    tokenProgram: TAccountMetas[11];
   };
   data: ClaimWinningsInstructionData;
 };
@@ -456,7 +495,7 @@ export function parseClaimWinningsInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedClaimWinningsInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 11) {
+  if (instruction.accounts.length < 12) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -479,7 +518,8 @@ export function parseClaimWinningsInstruction<
       config: getNextAccount(),
       round: getNextAccount(),
       ticket: getNextAccount(),
-      usdcMint: getNextAccount(),
+      pickCounter: getNextAccount(),
+      paymentMint: getNextAccount(),
       prizeVault: getNextAccount(),
       prizeVaultAuthority: getNextAccount(),
       winnerTokenAccount: getNextAccount(),

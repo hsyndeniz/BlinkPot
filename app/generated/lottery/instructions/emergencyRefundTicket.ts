@@ -61,7 +61,7 @@ export type EmergencyRefundTicketInstruction<
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
   TAccountTicket extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountPrizeVault extends string | AccountMeta<string> = string,
   TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
   TAccountLpVault extends string | AccountMeta<string> = string,
@@ -90,9 +90,9 @@ export type EmergencyRefundTicketInstruction<
       TAccountTicket extends string
         ? WritableAccount<TAccountTicket>
         : TAccountTicket,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountPrizeVault extends string
         ? WritableAccount<TAccountPrizeVault>
         : TAccountPrizeVault,
@@ -161,7 +161,7 @@ export type EmergencyRefundTicketAsyncInput<
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
   TAccountTicket extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountLpVault extends string = string,
@@ -176,7 +176,7 @@ export type EmergencyRefundTicketAsyncInput<
   config?: Address<TAccountConfig>;
   round: Address<TAccountRound>;
   ticket: Address<TAccountTicket>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   prizeVault?: Address<TAccountPrizeVault>;
   prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
   lpVault?: Address<TAccountLpVault>;
@@ -193,7 +193,7 @@ export async function getEmergencyRefundTicketInstructionAsync<
   TAccountConfig extends string,
   TAccountRound extends string,
   TAccountTicket extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountLpVault extends string,
@@ -210,7 +210,7 @@ export async function getEmergencyRefundTicketInstructionAsync<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
@@ -229,7 +229,7 @@ export async function getEmergencyRefundTicketInstructionAsync<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
@@ -250,7 +250,7 @@ export async function getEmergencyRefundTicketInstructionAsync<
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
     ticket: { value: input.ticket ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
       value: input.prizeVaultAuthority ?? null,
@@ -281,7 +281,7 @@ export async function getEmergencyRefundTicketInstructionAsync<
   }
   if (!accounts.prizeVault.value) {
     accounts.prizeVault.value = await findPrizeVaultPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.prizeVaultAuthority.value) {
@@ -292,7 +292,7 @@ export async function getEmergencyRefundTicketInstructionAsync<
   }
   if (!accounts.lpPrincipal.value) {
     accounts.lpPrincipal.value = await findLpPrincipalPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.lpAuthority.value) {
@@ -310,7 +310,7 @@ export async function getEmergencyRefundTicketInstructionAsync<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
       getAccountMeta(accounts.ticket),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.lpVault),
@@ -329,7 +329,7 @@ export async function getEmergencyRefundTicketInstructionAsync<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
@@ -347,7 +347,7 @@ export type EmergencyRefundTicketInput<
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
   TAccountTicket extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountLpVault extends string = string,
@@ -362,7 +362,7 @@ export type EmergencyRefundTicketInput<
   config: Address<TAccountConfig>;
   round: Address<TAccountRound>;
   ticket: Address<TAccountTicket>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   prizeVault: Address<TAccountPrizeVault>;
   prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
   lpVault: Address<TAccountLpVault>;
@@ -379,7 +379,7 @@ export function getEmergencyRefundTicketInstruction<
   TAccountConfig extends string,
   TAccountRound extends string,
   TAccountTicket extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountLpVault extends string,
@@ -396,7 +396,7 @@ export function getEmergencyRefundTicketInstruction<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
@@ -414,7 +414,7 @@ export function getEmergencyRefundTicketInstruction<
   TAccountConfig,
   TAccountRound,
   TAccountTicket,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountPrizeVault,
   TAccountPrizeVaultAuthority,
   TAccountLpVault,
@@ -434,7 +434,7 @@ export function getEmergencyRefundTicketInstruction<
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
     ticket: { value: input.ticket ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
       value: input.prizeVaultAuthority ?? null,
@@ -472,7 +472,7 @@ export function getEmergencyRefundTicketInstruction<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
       getAccountMeta(accounts.ticket),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.lpVault),
@@ -491,7 +491,7 @@ export function getEmergencyRefundTicketInstruction<
     TAccountConfig,
     TAccountRound,
     TAccountTicket,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpVault,
@@ -514,7 +514,7 @@ export type ParsedEmergencyRefundTicketInstruction<
     config: TAccountMetas[1];
     round: TAccountMetas[2];
     ticket: TAccountMetas[3];
-    usdcMint: TAccountMetas[4];
+    paymentMint: TAccountMetas[4];
     prizeVault: TAccountMetas[5];
     prizeVaultAuthority: TAccountMetas[6];
     lpVault: TAccountMetas[7];
@@ -559,7 +559,7 @@ export function parseEmergencyRefundTicketInstruction<
       config: getNextAccount(),
       round: getNextAccount(),
       ticket: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       prizeVault: getNextAccount(),
       prizeVaultAuthority: getNextAccount(),
       lpVault: getNextAccount(),

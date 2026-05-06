@@ -45,8 +45,8 @@ pub struct StartRound<'info> {
     )]
     pub lp_vault: Box<Account<'info, LpVault>>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Box<Account<'info, Mint>>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
 
     /// CHECK: PDA authority for prize_vault.
     #[account(seeds = [PRIZE_VAULT_AUTHORITY_SEED], bump = config.prize_vault_authority_bump)]
@@ -54,9 +54,9 @@ pub struct StartRound<'info> {
 
     #[account(
         mut,
-        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [PRIZE_VAULT_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
@@ -67,9 +67,9 @@ pub struct StartRound<'info> {
 
     #[account(
         mut,
-        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = lp_authority,
     )]
     pub lp_principal: Box<Account<'info, TokenAccount>>,
@@ -128,17 +128,23 @@ pub fn start_round(
     };
 
     if guaranteed_prize_pool > 0 {
-        // Cap guarantee against LP NAV.
-        if ctx.accounts.config.max_guarantee_per_round_bps > 0 {
-            let cap = bps_amount(
-                ctx.accounts.lp_vault.total_assets,
-                ctx.accounts.config.max_guarantee_per_round_bps,
-            )?;
-            require!(
-                guaranteed_prize_pool <= cap,
-                LotteryError::GuaranteeExceedsCap
-            );
-        }
+        // Cap guarantee against LP NAV. The cap is mandatory whenever a guarantee is
+        // requested — start_round is permissionless, so without this requirement a
+        // misconfigured `max_guarantee_per_round_bps = 0` (intended as "no cap") would
+        // let any caller commit the entire LP to a single round. Admin must set a
+        // nonzero cap in config before guarantees can be used.
+        require!(
+            ctx.accounts.config.max_guarantee_per_round_bps > 0,
+            LotteryError::GuaranteeExceedsCap
+        );
+        let cap = bps_amount(
+            ctx.accounts.lp_vault.total_assets,
+            ctx.accounts.config.max_guarantee_per_round_bps,
+        )?;
+        require!(
+            guaranteed_prize_pool <= cap,
+            LotteryError::GuaranteeExceedsCap
+        );
         let pending_assets = assets_for_shares(
             ctx.accounts.lp_vault.pending_withdraw_shares,
             ctx.accounts.lp_vault.total_shares,
@@ -166,14 +172,14 @@ pub fn start_round(
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.lp_principal.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.prize_vault.to_account_info(),
                     authority: ctx.accounts.lp_authority.to_account_info(),
                 },
                 signers,
             ),
             guaranteed_prize_pool,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
     }
 
@@ -207,7 +213,7 @@ pub fn start_round(
         compute_dynamic_bonusball(
             initial_pool,
             ctx.accounts.config.bonusball_base,
-            ctx.accounts.config.bonusball_pool_step_usdc,
+            ctx.accounts.config.bonusball_pool_step_units,
         )
     } else {
         ctx.accounts.config.bonusball_max
@@ -240,7 +246,7 @@ pub fn start_round(
     round.referral_fees_accrued = 0;
     round.seed_prize_pool = seed_prize_pool;
     round.lp_guarantee_reserved = guaranteed_prize_pool;
-    round.payout_per_winner = [0u64; TIER_COUNT];
+    round.per_combo_payout = [0u64; TIER_COUNT];
     round.used_minimum_payouts = false;
     round.tier_paid_counts = [0u32; TIER_COUNT];
     round.tier_paid_amounts = [0u64; TIER_COUNT];
@@ -288,14 +294,14 @@ pub struct ArchiveRound<'info> {
     )]
     pub lp_vault: Box<Account<'info, LpVault>>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Box<Account<'info, Mint>>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
-        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [PRIZE_VAULT_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
@@ -306,9 +312,9 @@ pub struct ArchiveRound<'info> {
 
     #[account(
         mut,
-        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = lp_authority,
     )]
     pub lp_principal: Box<Account<'info, TokenAccount>>,
@@ -325,6 +331,15 @@ pub struct ArchiveRound<'info> {
 /// `config.untaken_tier_destination`: either back to the LP pool, or recorded as
 /// `rolled_to_next_round` so the next `start_round` can pick it up as `seed_prize_pool`.
 pub fn archive_round(ctx: Context<ArchiveRound>) -> Result<()> {
+    // Honor the operational pause and emergency-mode flags. archive_round routes
+    // potentially large leftovers (to LP or as next-round seed) and transitions a
+    // round to its terminal state — both should be frozen when the protocol is
+    // paused or in emergency, mirroring every other state-mutating instruction.
+    require!(!ctx.accounts.config.paused, LotteryError::Paused);
+    require!(
+        !ctx.accounts.config.emergency_mode,
+        LotteryError::EmergencyMode
+    );
     let round = &mut ctx.accounts.round;
     require!(round.is_claimable(), LotteryError::RoundNotArchivable);
 
@@ -355,14 +370,14 @@ pub fn archive_round(ctx: Context<ArchiveRound>) -> Result<()> {
                         ctx.accounts.token_program.to_account_info(),
                         TransferChecked {
                             from: ctx.accounts.prize_vault.to_account_info(),
-                            mint: ctx.accounts.usdc_mint.to_account_info(),
+                            mint: ctx.accounts.payment_mint.to_account_info(),
                             to: ctx.accounts.lp_principal.to_account_info(),
                             authority: ctx.accounts.prize_vault_authority.to_account_info(),
                         },
                         signers,
                     ),
                     leftover,
-                    ctx.accounts.usdc_mint.decimals,
+                    ctx.accounts.config.payment_decimals,
                 )?;
                 let lp_vault = &mut ctx.accounts.lp_vault;
                 lp_vault.total_assets = lp_vault

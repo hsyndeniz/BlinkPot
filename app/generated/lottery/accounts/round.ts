@@ -86,11 +86,13 @@ export type Round = {
   seedPrizePool: bigint;
   lpGuaranteeReserved: bigint;
   /**
-   * Fixed payout (USDC base units) per winning ticket for each tier.
-   * Computed at reveal_draw time as `min_payout[t] + premium_pool[t] / combos[t]`.
-   * Zero for non-winning tiers.
+   * Per-(winning) combo payout for each tier (payment-mint base units), populated by
+   * `reveal_draw`. The value covers ONE combo's full share — actual per-ticket payout
+   * at claim time is `per_combo_payout[tier] / pick_counter.count`, where the counter
+   * tracks how many tickets share the winning pick. This is what prevents duplicate
+   * winning tickets from over-drawing the prize pool.
    */
-  payoutPerWinner: Array<bigint>;
+  perComboPayout: Array<bigint>;
   /** Snapshot of `Config.tier_is_winning` taken at start_round. */
   tierIsWinning: Array<boolean>;
   /**
@@ -129,11 +131,13 @@ export type RoundArgs = {
   seedPrizePool: number | bigint;
   lpGuaranteeReserved: number | bigint;
   /**
-   * Fixed payout (USDC base units) per winning ticket for each tier.
-   * Computed at reveal_draw time as `min_payout[t] + premium_pool[t] / combos[t]`.
-   * Zero for non-winning tiers.
+   * Per-(winning) combo payout for each tier (payment-mint base units), populated by
+   * `reveal_draw`. The value covers ONE combo's full share — actual per-ticket payout
+   * at claim time is `per_combo_payout[tier] / pick_counter.count`, where the counter
+   * tracks how many tickets share the winning pick. This is what prevents duplicate
+   * winning tickets from over-drawing the prize pool.
    */
-  payoutPerWinner: Array<number | bigint>;
+  perComboPayout: Array<number | bigint>;
   /** Snapshot of `Config.tier_is_winning` taken at start_round. */
   tierIsWinning: Array<boolean>;
   /**
@@ -174,7 +178,7 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
       ["referralFeesAccrued", getU64Encoder()],
       ["seedPrizePool", getU64Encoder()],
       ["lpGuaranteeReserved", getU64Encoder()],
-      ["payoutPerWinner", getArrayEncoder(getU64Encoder(), { size: 12 })],
+      ["perComboPayout", getArrayEncoder(getU64Encoder(), { size: 12 })],
       ["tierIsWinning", getArrayEncoder(getBooleanEncoder(), { size: 12 })],
       ["usedMinimumPayouts", getBooleanEncoder()],
       ["tierPaidCounts", getArrayEncoder(getU32Encoder(), { size: 12 })],
@@ -211,7 +215,7 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
     ["referralFeesAccrued", getU64Decoder()],
     ["seedPrizePool", getU64Decoder()],
     ["lpGuaranteeReserved", getU64Decoder()],
-    ["payoutPerWinner", getArrayDecoder(getU64Decoder(), { size: 12 })],
+    ["perComboPayout", getArrayDecoder(getU64Decoder(), { size: 12 })],
     ["tierIsWinning", getArrayDecoder(getBooleanDecoder(), { size: 12 })],
     ["usedMinimumPayouts", getBooleanDecoder()],
     ["tierPaidCounts", getArrayDecoder(getU32Decoder(), { size: 12 })],

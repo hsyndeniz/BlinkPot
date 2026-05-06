@@ -122,6 +122,8 @@ export const LOTTERY_ERROR__MATH_OVERFLOW = 0x17a3; // 6051
 export const LOTTERY_ERROR__INVALID_TOKEN_MINT = 0x17a4; // 6052
 /** RoundNotEmergency: Round is not in Emergency state */
 export const LOTTERY_ERROR__ROUND_NOT_EMERGENCY = 0x17a5; // 6053
+/** InvalidPickCounter: Pick counter PDA does not match the ticket's pick */
+export const LOTTERY_ERROR__INVALID_PICK_COUNTER = 0x17a6; // 6054
 
 export type LotteryError =
   | typeof LOTTERY_ERROR__BONUSBALL_OUT_OF_RANGE
@@ -131,6 +133,7 @@ export type LotteryError =
   | typeof LOTTERY_ERROR__INVALID_BATCH_SIZE
   | typeof LOTTERY_ERROR__INVALID_BONUSBALL_RANGE
   | typeof LOTTERY_ERROR__INVALID_CONFIG
+  | typeof LOTTERY_ERROR__INVALID_PICK_COUNTER
   | typeof LOTTERY_ERROR__INVALID_PREMIUM_ALLOCATION
   | typeof LOTTERY_ERROR__INVALID_RANDOMNESS_ACCOUNT
   | typeof LOTTERY_ERROR__INVALID_ROUND_DURATION
@@ -189,6 +192,7 @@ if (process.env.NODE_ENV !== "production") {
     [LOTTERY_ERROR__INVALID_BATCH_SIZE]: `Batch size out of range`,
     [LOTTERY_ERROR__INVALID_BONUSBALL_RANGE]: `Bonusball max outside allowed range`,
     [LOTTERY_ERROR__INVALID_CONFIG]: `Invalid configuration parameters`,
+    [LOTTERY_ERROR__INVALID_PICK_COUNTER]: `Pick counter PDA does not match the ticket's pick`,
     [LOTTERY_ERROR__INVALID_PREMIUM_ALLOCATION]: `Premium minimum allocation is out of range`,
     [LOTTERY_ERROR__INVALID_RANDOMNESS_ACCOUNT]: `Switchboard randomness account mismatch`,
     [LOTTERY_ERROR__INVALID_ROUND_DURATION]: `Round duration outside allowed range`,

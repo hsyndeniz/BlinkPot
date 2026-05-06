@@ -57,6 +57,12 @@ export function getSubscriptionDiscriminatorBytes() {
 
 export type Subscription = {
   discriminator: ReadonlyUint8Array;
+  /**
+   * Set to `true` the first time this PDA is written. Subsequent re-subscriptions
+   * (which reuse the same PDA via `init_if_needed`) take the "already initialized"
+   * branch and must satisfy the inactive + zero-escrow guards.
+   */
+  initialized: boolean;
   owner: Address;
   dailyTicketCount: number;
   agreedPrice: bigint;
@@ -72,6 +78,12 @@ export type Subscription = {
 };
 
 export type SubscriptionArgs = {
+  /**
+   * Set to `true` the first time this PDA is written. Subsequent re-subscriptions
+   * (which reuse the same PDA via `init_if_needed`) take the "already initialized"
+   * branch and must satisfy the inactive + zero-escrow guards.
+   */
+  initialized: boolean;
   owner: Address;
   dailyTicketCount: number;
   agreedPrice: number | bigint;
@@ -91,6 +103,7 @@ export function getSubscriptionEncoder(): FixedSizeEncoder<SubscriptionArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["initialized", getBooleanEncoder()],
       ["owner", getAddressEncoder()],
       ["dailyTicketCount", getU8Encoder()],
       ["agreedPrice", getU64Encoder()],
@@ -112,6 +125,7 @@ export function getSubscriptionEncoder(): FixedSizeEncoder<SubscriptionArgs> {
 export function getSubscriptionDecoder(): FixedSizeDecoder<Subscription> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["initialized", getBooleanDecoder()],
     ["owner", getAddressDecoder()],
     ["dailyTicketCount", getU8Decoder()],
     ["agreedPrice", getU64Decoder()],
@@ -189,5 +203,5 @@ export async function fetchAllMaybeSubscription(
 }
 
 export function getSubscriptionSize(): number {
-  return 111;
+  return 112;
 }

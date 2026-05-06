@@ -588,6 +588,40 @@ function StatusBadge(props: {
   );
 }
 
+function DecimalsHeadsUp(props: { decimals: number; detected: boolean }) {
+  return (
+    <div className="rounded-lg border border-border-low bg-blue-50 dark:bg-blue-950/20 p-3 text-xs leading-relaxed text-foreground/80">
+      <strong className="font-semibold text-foreground">
+        Amount fields use the payment mint&rsquo;s base units.
+      </strong>{" "}
+      <span>
+        Enter <em>whole-token amounts</em> (e.g. <code className="font-mono">1</code>{" "}
+        for 1 token, <code className="font-mono">0.25</code> for ¼ token) for{" "}
+        <span className="font-mono">defaultTicketPrice</span>,{" "}
+        <span className="font-mono">guaranteedPrizePool</span>,{" "}
+        <span className="font-mono">lpPoolCap</span>,{" "}
+        <span className="font-mono">bonusballPoolStepUnits</span>, and{" "}
+        <span className="font-mono">tierMinPayoutPerWinner</span>. They are converted
+        to base units automatically using the mint&rsquo;s decimals — no manual
+        scaling required.
+      </span>{" "}
+      {props.detected ? (
+        <span>
+          Detected:{" "}
+          <span className="font-mono font-semibold text-foreground">
+            {props.decimals} decimals
+          </span>
+          .
+        </span>
+      ) : (
+        <span className="text-muted">
+          Enter a mint address above to detect its decimals.
+        </span>
+      )}
+    </div>
+  );
+}
+
 function AddressLink(props: { address?: Address; label?: string }) {
   const { getExplorerUrl } = useCluster();
   if (!props.address) return <span className="text-muted">-</span>;
@@ -2911,10 +2945,14 @@ export function LotteryConsole() {
                   <Panel title="Setup">
                     <div className="grid gap-3">
                       <Field
-                        label="USDC mint"
+                        label="Payment mint"
                         value={setupMintInput}
                         onChange={setSetupMintInput}
-                        placeholder="Mint address"
+                        placeholder="SPL Token mint address (USDC, USDT, PYUSD, …)"
+                      />
+                      <DecimalsHeadsUp
+                        decimals={setupMint.decimals}
+                        detected={!!setupMint.mint}
                       />
                       <ConfigFormFields
                         form={effectiveConfigForm}
@@ -2942,6 +2980,7 @@ export function LotteryConsole() {
                       </StatusBadge>
                     }
                   >
+                    <DecimalsHeadsUp decimals={decimals} detected />
                     <ConfigFormFields
                       form={effectiveConfigForm}
                       onChange={handleConfigFormChange}

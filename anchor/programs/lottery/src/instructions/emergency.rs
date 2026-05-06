@@ -31,6 +31,37 @@ pub struct EnterRoundEmergency<'info> {
         bump = round.bump,
     )]
     pub round: Box<Account<'info, Round>>,
+
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
+
+    #[account(
+        mut,
+        seeds = [PRIZE_VAULT_TOKEN_SEED, payment_mint.key().as_ref()],
+        bump,
+        token::mint = payment_mint,
+        token::authority = prize_vault_authority,
+    )]
+    pub prize_vault: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: PDA authority for prize_vault, signs the LP-guarantee return transfer.
+    #[account(seeds = [PRIZE_VAULT_AUTHORITY_SEED], bump = config.prize_vault_authority_bump)]
+    pub prize_vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
+        bump,
+        token::mint = payment_mint,
+        token::authority = lp_authority,
+    )]
+    pub lp_principal: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: PDA authority for lp_principal.
+    #[account(seeds = [LP_AUTHORITY_SEED], bump = config.lp_authority_bump)]
+    pub lp_authority: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 pub fn enter_round_emergency(ctx: Context<EnterRoundEmergency>) -> Result<()> {
@@ -39,6 +70,42 @@ pub fn enter_round_emergency(ctx: Context<EnterRoundEmergency>) -> Result<()> {
         !matches!(round.state, RoundState::Claimable | RoundState::Archived),
         LotteryError::RoundNotArchivable
     );
+
+    // Return the LP guarantee that was committed to this round at `start_round` time.
+    // Until now `lp_vault.total_assets` still claimed those funds (they were physically
+    // moved to prize_vault but never deducted from NAV) — fine in normal flow because
+    // archive_round eventually returns the leftover. In emergency mode there is no
+    // archive (round terminates as Emergency, not Archived), so without this transfer
+    // the LP guarantee would be permanently stranded in prize_vault and emergency_lp_-
+    // withdraw would pay LPs against an inflated NAV with insufficient lp_principal.
+    let to_recover = round.lp_guarantee_reserved;
+    if to_recover > 0 {
+        require!(
+            ctx.accounts.prize_vault.amount >= to_recover,
+            LotteryError::PrizeVaultUnderfunded
+        );
+        let signer_seeds: &[&[u8]] = &[
+            PRIZE_VAULT_AUTHORITY_SEED,
+            &[ctx.accounts.config.prize_vault_authority_bump],
+        ];
+        let signers = &[signer_seeds];
+        token::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.prize_vault.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
+                    to: ctx.accounts.lp_principal.to_account_info(),
+                    authority: ctx.accounts.prize_vault_authority.to_account_info(),
+                },
+                signers,
+            ),
+            to_recover,
+            ctx.accounts.config.payment_decimals,
+        )?;
+        round.lp_guarantee_reserved = 0;
+    }
+
     round.state = RoundState::Emergency;
     round.emergency_at = Clock::get()?.unix_timestamp;
 
@@ -78,14 +145,14 @@ pub struct EmergencyRefundTicket<'info> {
     )]
     pub ticket: Box<Account<'info, Ticket>>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Box<Account<'info, Mint>>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
-        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [PRIZE_VAULT_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
@@ -103,9 +170,9 @@ pub struct EmergencyRefundTicket<'info> {
 
     #[account(
         mut,
-        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = lp_authority,
     )]
     pub lp_principal: Box<Account<'info, TokenAccount>>,
@@ -130,7 +197,7 @@ pub struct EmergencyRefundTicket<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = owner,
     )]
     pub owner_token_account: Box<Account<'info, TokenAccount>>,
@@ -209,14 +276,14 @@ pub fn emergency_refund_ticket(ctx: Context<EmergencyRefundTicket>) -> Result<()
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.prize_vault.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.owner_token_account.to_account_info(),
                     authority: ctx.accounts.prize_vault_authority.to_account_info(),
                 },
                 signers,
             ),
             prize_refund,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
     }
 
@@ -235,14 +302,14 @@ pub fn emergency_refund_ticket(ctx: Context<EmergencyRefundTicket>) -> Result<()
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.lp_principal.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.owner_token_account.to_account_info(),
                     authority: ctx.accounts.lp_authority.to_account_info(),
                 },
                 signers,
             ),
             shortfall,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
         ctx.accounts.lp_vault.total_assets = ctx
             .accounts
@@ -284,14 +351,14 @@ pub struct EmergencyLpWithdraw<'info> {
     )]
     pub position: Box<Account<'info, LpPosition>>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Box<Account<'info, Mint>>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
-        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = lp_authority,
     )]
     pub lp_principal: Box<Account<'info, TokenAccount>>,
@@ -302,7 +369,7 @@ pub struct EmergencyLpWithdraw<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = owner,
     )]
     pub owner_token_account: Box<Account<'info, TokenAccount>>,
@@ -335,14 +402,14 @@ pub fn emergency_lp_withdraw(ctx: Context<EmergencyLpWithdraw>) -> Result<()> {
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.lp_principal.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.owner_token_account.to_account_info(),
                     authority: ctx.accounts.lp_authority.to_account_info(),
                 },
                 signers,
             ),
             payable,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
     }
 
@@ -358,10 +425,9 @@ pub fn emergency_lp_withdraw(ctx: Context<EmergencyLpWithdraw>) -> Result<()> {
     position.pending_withdraw_round = 0;
     position.pending_withdraw_initiated_at = 0;
 
-    let shares_u64 = u64::try_from(total_shares).unwrap_or(u64::MAX);
     emit!(EmergencyLpWithdrawn {
         owner: ctx.accounts.owner.key(),
-        shares: shares_u64,
+        shares: total_shares,
         amount: payable,
     });
     Ok(())

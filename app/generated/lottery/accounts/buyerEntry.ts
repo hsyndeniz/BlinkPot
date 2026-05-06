@@ -17,6 +17,8 @@ import {
   fixEncoderSize,
   getAddressDecoder,
   getAddressEncoder,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -49,6 +51,12 @@ export function getBuyerEntryDiscriminatorBytes() {
 
 export type BuyerEntry = {
   discriminator: ReadonlyUint8Array;
+  /**
+   * Set to `true` the first time this PDA is written. Subsequent calls must enter the
+   * "already initialized" branch. This is an explicit defense against `init_if_needed`
+   * reinitialization rather than relying on the natural-zero check of other fields.
+   */
+  initialized: boolean;
   roundId: bigint;
   buyer: Address;
   ticketCount: bigint;
@@ -56,6 +64,12 @@ export type BuyerEntry = {
 };
 
 export type BuyerEntryArgs = {
+  /**
+   * Set to `true` the first time this PDA is written. Subsequent calls must enter the
+   * "already initialized" branch. This is an explicit defense against `init_if_needed`
+   * reinitialization rather than relying on the natural-zero check of other fields.
+   */
+  initialized: boolean;
   roundId: number | bigint;
   buyer: Address;
   ticketCount: number | bigint;
@@ -67,6 +81,7 @@ export function getBuyerEntryEncoder(): FixedSizeEncoder<BuyerEntryArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["initialized", getBooleanEncoder()],
       ["roundId", getU64Encoder()],
       ["buyer", getAddressEncoder()],
       ["ticketCount", getU64Encoder()],
@@ -80,6 +95,7 @@ export function getBuyerEntryEncoder(): FixedSizeEncoder<BuyerEntryArgs> {
 export function getBuyerEntryDecoder(): FixedSizeDecoder<BuyerEntry> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["initialized", getBooleanDecoder()],
     ["roundId", getU64Decoder()],
     ["buyer", getAddressDecoder()],
     ["ticketCount", getU64Decoder()],
@@ -149,5 +165,5 @@ export async function fetchAllMaybeBuyerEntry(
 }
 
 export function getBuyerEntrySize(): number {
-  return 57;
+  return 58;
 }

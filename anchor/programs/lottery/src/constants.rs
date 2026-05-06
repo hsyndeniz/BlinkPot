@@ -14,6 +14,7 @@ pub const SUB_ESCROW_SEED: &[u8] = b"sub_escrow";
 pub const BUYER_ENTRY_SEED: &[u8] = b"buyer_entry";
 pub const PRIZE_VAULT_TOKEN_SEED: &[u8] = b"prize_vault_token";
 pub const LP_PRINCIPAL_TOKEN_SEED: &[u8] = b"lp_principal_token";
+pub const PICK_COUNTER_SEED: &[u8] = b"pick_counter";
 
 pub const BPS_DENOM: u64 = 10_000;
 pub const TIER_COUNT: usize = 12;
@@ -56,7 +57,10 @@ pub const MAX_ROUND_DURATION_SECS: i64 = 7 * 24 * 60 * 60;
 pub const EMERGENCY_TIMEOUT_SECS: i64 = 60 * 60;
 
 pub const SHARE_SCALE: u128 = 1_000_000_000_000;
-pub const INITIAL_SHARES_PER_USDC: u128 = 1_000_000;
+/// Share-precision multiplier for the very first deposit (when `total_shares == 0`).
+/// Decimals-agnostic — the program treats this as a fixed scaling factor regardless
+/// of the payment mint's decimals; u128 share storage absorbs any practical pool size.
+pub const INITIAL_SHARES_PER_TOKEN_UNIT: u128 = 1_000_000;
 
 pub const MAX_DAYS_PER_SUBSCRIPTION: u16 = 365;
 pub const MAX_DAILY_TICKETS_PER_SUB: u8 = 20;

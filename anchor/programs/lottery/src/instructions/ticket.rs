@@ -4,8 +4,8 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
     BUYER_ENTRY_SEED, CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
-    MAX_TICKETS_PER_BATCH, PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED, REFERRAL_SEED,
-    ROUND_SEED, TICKET_SEED,
+    MAX_TICKETS_PER_BATCH, PICK_COUNTER_SEED, PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED,
+    REFERRAL_SEED, ROUND_SEED, TICKET_SEED,
 };
 use crate::errors::LotteryError;
 use crate::events::TicketsPurchased;
@@ -13,16 +13,114 @@ use crate::math::{bps_amount, validate_pick};
 use crate::state::buyer_entry::BuyerEntry;
 use crate::state::config::Config;
 use crate::state::lp::LpVault;
+use crate::state::pick_counter::PickCounter;
 use crate::state::referral::Referral;
 use crate::state::round::Round;
 use crate::state::ticket::{Ticket, TicketPick};
 
-/// Resolved per-ticket fee allocations (USDC base units, per single ticket).
+/// Resolved per-ticket fee allocations (payment-mint base units, per single ticket).
 pub(crate) struct PerTicketFees {
     pub lp_edge: u64,
     pub referral_first: u64,
     pub referral_second: u64,
     pub prize_pool: u64, // remainder credited to prize vault
+}
+
+/// Either creates a fresh `PickCounter` PDA for `(round_id, pick)` or increments the
+/// existing one. The counter is the on-chain mechanism that prevents duplicate winning
+/// tickets from over-drawing the prize pool: at claim time, the per-combo payout for a
+/// tier is divided by `count`. Idempotent within a transaction — if the same pick PDA
+/// is supplied multiple times in `remaining_accounts` (because a buyer purchased
+/// several tickets with the same numbers), the first call creates and the rest
+/// increment, which is exactly what we want.
+pub(crate) fn upsert_pick_counter<'info>(
+    pick_counter_account: &AccountInfo<'info>,
+    pick: &TicketPick,
+    round_id: u64,
+    payer: &AccountInfo<'info>,
+    system_program_ai: &AccountInfo<'info>,
+    program_id: &Pubkey,
+) -> Result<()> {
+    let round_id_bytes = round_id.to_le_bytes();
+    let bonus_byte = [pick.bonusball];
+    let (expected_pda, bump) = Pubkey::find_program_address(
+        &[
+            PICK_COUNTER_SEED,
+            &round_id_bytes,
+            &pick.normals,
+            &bonus_byte,
+        ],
+        program_id,
+    );
+    require_keys_eq!(
+        pick_counter_account.key(),
+        expected_pda,
+        LotteryError::InvalidPickCounter
+    );
+
+    if pick_counter_account.data_is_empty() {
+        // Fresh PDA — create + initialize.
+        let space = 8 + PickCounter::LEN;
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(space);
+        let signer_seeds: &[&[u8]] = &[
+            PICK_COUNTER_SEED,
+            &round_id_bytes,
+            &pick.normals,
+            &bonus_byte,
+            &[bump],
+        ];
+        let signers = &[signer_seeds];
+        system_program::create_account(
+            CpiContext::new_with_signer(
+                system_program_ai.clone(),
+                system_program::CreateAccount {
+                    from: payer.clone(),
+                    to: pick_counter_account.clone(),
+                },
+                signers,
+            ),
+            lamports,
+            space as u64,
+            program_id,
+        )?;
+
+        let counter = PickCounter {
+            initialized: true,
+            round_id,
+            normals: pick.normals,
+            bonusball: pick.bonusball,
+            count: 1,
+            bump,
+        };
+        let mut data = pick_counter_account.try_borrow_mut_data()?;
+        let mut writer = std::io::Cursor::new(data.as_mut());
+        counter.try_serialize(&mut writer)?;
+    } else {
+        // Already initialized — must be owned by us, must match this round.
+        require_keys_eq!(
+            *pick_counter_account.owner,
+            *program_id,
+            LotteryError::InvalidPickCounter
+        );
+        let mut data = pick_counter_account.try_borrow_mut_data()?;
+        let mut counter = PickCounter::try_deserialize(&mut data.as_ref())
+            .map_err(|_| error!(LotteryError::InvalidPickCounter))?;
+        require!(counter.initialized, LotteryError::InvalidPickCounter);
+        require_eq!(counter.round_id, round_id, LotteryError::RoundIdMismatch);
+        require!(
+            counter.normals == pick.normals && counter.bonusball == pick.bonusball,
+            LotteryError::InvalidPickCounter
+        );
+        counter.count = counter
+            .count
+            .checked_add(1)
+            .ok_or(error!(LotteryError::MathOverflow))?;
+        let mut writer = std::io::Cursor::new(data.as_mut());
+        counter.try_serialize(&mut writer)?;
+    }
+
+    Ok(())
 }
 
 pub(crate) fn compute_per_ticket_fees(
@@ -73,21 +171,21 @@ pub struct BuyTickets<'info> {
     )]
     pub round: Box<Account<'info, Round>>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Box<Account<'info, Mint>>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = buyer,
     )]
     pub buyer_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
-        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [PRIZE_VAULT_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
@@ -109,9 +207,9 @@ pub struct BuyTickets<'info> {
 
     #[account(
         mut,
-        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = lp_authority,
     )]
     pub lp_principal: Box<Account<'info, TokenAccount>>,
@@ -251,7 +349,8 @@ pub fn buy_tickets<'info>(
         .ok_or(error!(LotteryError::MathOverflow))?;
 
     let buyer_entry = &mut ctx.accounts.buyer_entry;
-    if buyer_entry.round_id == 0 && buyer_entry.ticket_count == 0 {
+    if !buyer_entry.initialized {
+        buyer_entry.initialized = true;
         buyer_entry.round_id = ctx.accounts.round.round_id;
         buyer_entry.buyer = ctx.accounts.buyer.key();
         buyer_entry.bump = ctx.bumps.buyer_entry;
@@ -261,15 +360,24 @@ pub fn buy_tickets<'info>(
             ctx.accounts.round.round_id,
             LotteryError::RoundIdMismatch
         );
+        require_keys_eq!(
+            buyer_entry.buyer,
+            ctx.accounts.buyer.key(),
+            LotteryError::Unauthorized
+        );
     }
 
     let first_index = buyer_entry.ticket_count;
 
+    // remaining_accounts layout: first `count` entries are ticket PDAs (one per pick,
+    // unique by ticket_index), followed by `count` PickCounter PDAs (one per pick — may
+    // repeat if a buyer purchases duplicate picks; `upsert_pick_counter` handles that).
     require_eq!(
         ctx.remaining_accounts.len(),
-        count,
+        count.checked_mul(2).ok_or(error!(LotteryError::MathOverflow))?,
         LotteryError::InvalidBatchSize
     );
+    let (ticket_accounts, pick_counter_accounts) = ctx.remaining_accounts.split_at(count);
 
     let rent = Rent::get()?;
     let space = 8 + Ticket::LEN;
@@ -279,7 +387,7 @@ pub fn buy_tickets<'info>(
     let buyer_key = ctx.accounts.buyer.key();
     let program_id = ctx.program_id;
 
-    for (i, ticket_account) in ctx.remaining_accounts.iter().enumerate() {
+    for (i, ticket_account) in ticket_accounts.iter().enumerate() {
         let ticket_index = first_index
             .checked_add(i as u64)
             .ok_or(error!(LotteryError::MathOverflow))?;
@@ -336,24 +444,37 @@ pub fn buy_tickets<'info>(
         ticket.try_serialize(&mut writer)?;
     }
 
+    // Upsert one PickCounter per ticket. Duplicates within the batch (same pick passed
+    // multiple times) work correctly: the first hit creates, subsequent hits increment.
+    for (i, pick_counter_account) in pick_counter_accounts.iter().enumerate() {
+        upsert_pick_counter(
+            pick_counter_account,
+            &picks[i],
+            ctx.accounts.round.round_id,
+            &ctx.accounts.buyer.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            program_id,
+        )?;
+    }
+
     buyer_entry.ticket_count = first_index
         .checked_add(count as u64)
         .ok_or(error!(LotteryError::MathOverflow))?;
 
-    // LP edge: USDC moves from buyer → lp_principal.
+    // LP edge: payment tokens move from buyer → lp_principal.
     if lp_edge_total > 0 {
         token::transfer_checked(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.buyer_token_account.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.lp_principal.to_account_info(),
                     authority: ctx.accounts.buyer.to_account_info(),
                 },
             ),
             lp_edge_total,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
         let lp_vault = &mut ctx.accounts.lp_vault;
         lp_vault.total_assets = lp_vault
@@ -377,13 +498,13 @@ pub fn buy_tickets<'info>(
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.buyer_token_account.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.prize_vault.to_account_info(),
                     authority: ctx.accounts.buyer.to_account_info(),
                 },
             ),
             prize_vault_amount,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
     }
 

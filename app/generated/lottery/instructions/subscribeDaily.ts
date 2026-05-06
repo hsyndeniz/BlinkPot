@@ -63,7 +63,7 @@ export type SubscribeDailyInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountSubscription extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountOwnerTokenAccount extends string | AccountMeta<string> = string,
   TAccountSubEscrow extends string | AccountMeta<string> = string,
   TAccountReferrerAccount extends string | AccountMeta<string> = string,
@@ -88,9 +88,9 @@ export type SubscribeDailyInstruction<
       TAccountSubscription extends string
         ? WritableAccount<TAccountSubscription>
         : TAccountSubscription,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountOwnerTokenAccount extends string
         ? WritableAccount<TAccountOwnerTokenAccount>
         : TAccountOwnerTokenAccount,
@@ -161,7 +161,7 @@ export type SubscribeDailyAsyncInput<
   TAccountOwner extends string = string,
   TAccountConfig extends string = string,
   TAccountSubscription extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountOwnerTokenAccount extends string = string,
   TAccountSubEscrow extends string = string,
   TAccountReferrerAccount extends string = string,
@@ -172,7 +172,7 @@ export type SubscribeDailyAsyncInput<
   owner: TransactionSigner<TAccountOwner>;
   config?: Address<TAccountConfig>;
   subscription?: Address<TAccountSubscription>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
   subEscrow?: Address<TAccountSubEscrow>;
   referrerAccount?: Address<TAccountReferrerAccount>;
@@ -188,7 +188,7 @@ export async function getSubscribeDailyInstructionAsync<
   TAccountOwner extends string,
   TAccountConfig extends string,
   TAccountSubscription extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountOwnerTokenAccount extends string,
   TAccountSubEscrow extends string,
   TAccountReferrerAccount extends string,
@@ -201,7 +201,7 @@ export async function getSubscribeDailyInstructionAsync<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountSubEscrow,
     TAccountReferrerAccount,
@@ -216,7 +216,7 @@ export async function getSubscribeDailyInstructionAsync<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountSubEscrow,
     TAccountReferrerAccount,
@@ -233,7 +233,7 @@ export async function getSubscribeDailyInstructionAsync<
     owner: { value: input.owner ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     subscription: { value: input.subscription ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     ownerTokenAccount: {
       value: input.ownerTokenAccount ?? null,
       isWritable: true,
@@ -264,7 +264,7 @@ export async function getSubscribeDailyInstructionAsync<
   if (!accounts.subEscrow.value) {
     accounts.subEscrow.value = await findSubEscrowPda({
       owner: expectAddress(accounts.owner.value),
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.tokenProgram.value) {
@@ -286,7 +286,7 @@ export async function getSubscribeDailyInstructionAsync<
       getAccountMeta(accounts.owner),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.subscription),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.ownerTokenAccount),
       getAccountMeta(accounts.subEscrow),
       getAccountMeta(accounts.referrerAccount),
@@ -303,7 +303,7 @@ export async function getSubscribeDailyInstructionAsync<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountSubEscrow,
     TAccountReferrerAccount,
@@ -317,7 +317,7 @@ export type SubscribeDailyInput<
   TAccountOwner extends string = string,
   TAccountConfig extends string = string,
   TAccountSubscription extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountOwnerTokenAccount extends string = string,
   TAccountSubEscrow extends string = string,
   TAccountReferrerAccount extends string = string,
@@ -328,7 +328,7 @@ export type SubscribeDailyInput<
   owner: TransactionSigner<TAccountOwner>;
   config: Address<TAccountConfig>;
   subscription: Address<TAccountSubscription>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
   subEscrow: Address<TAccountSubEscrow>;
   referrerAccount?: Address<TAccountReferrerAccount>;
@@ -344,7 +344,7 @@ export function getSubscribeDailyInstruction<
   TAccountOwner extends string,
   TAccountConfig extends string,
   TAccountSubscription extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountOwnerTokenAccount extends string,
   TAccountSubEscrow extends string,
   TAccountReferrerAccount extends string,
@@ -357,7 +357,7 @@ export function getSubscribeDailyInstruction<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountSubEscrow,
     TAccountReferrerAccount,
@@ -371,7 +371,7 @@ export function getSubscribeDailyInstruction<
   TAccountOwner,
   TAccountConfig,
   TAccountSubscription,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountOwnerTokenAccount,
   TAccountSubEscrow,
   TAccountReferrerAccount,
@@ -387,7 +387,7 @@ export function getSubscribeDailyInstruction<
     owner: { value: input.owner ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     subscription: { value: input.subscription ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     ownerTokenAccount: {
       value: input.ownerTokenAccount ?? null,
       isWritable: true,
@@ -426,7 +426,7 @@ export function getSubscribeDailyInstruction<
       getAccountMeta(accounts.owner),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.subscription),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.ownerTokenAccount),
       getAccountMeta(accounts.subEscrow),
       getAccountMeta(accounts.referrerAccount),
@@ -443,7 +443,7 @@ export function getSubscribeDailyInstruction<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountSubEscrow,
     TAccountReferrerAccount,
@@ -462,7 +462,7 @@ export type ParsedSubscribeDailyInstruction<
     owner: TAccountMetas[0];
     config: TAccountMetas[1];
     subscription: TAccountMetas[2];
-    usdcMint: TAccountMetas[3];
+    paymentMint: TAccountMetas[3];
     ownerTokenAccount: TAccountMetas[4];
     subEscrow: TAccountMetas[5];
     referrerAccount?: TAccountMetas[6] | undefined;
@@ -503,7 +503,7 @@ export function parseSubscribeDailyInstruction<
       owner: getNextAccount(),
       config: getNextAccount(),
       subscription: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       ownerTokenAccount: getNextAccount(),
       subEscrow: getNextAccount(),
       referrerAccount: getNextOptionalAccount(),

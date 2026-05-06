@@ -2,13 +2,14 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
-    CONFIG_SEED, PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED, REFERRAL_SEED, ROUND_SEED,
-    TICKET_SEED,
+    CONFIG_SEED, PICK_COUNTER_SEED, PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED,
+    REFERRAL_SEED, ROUND_SEED, TICKET_SEED,
 };
 use crate::errors::LotteryError;
 use crate::events::WinningsClaimed;
 use crate::math::{bps_amount, count_matches, tier_for_match};
 use crate::state::config::Config;
+use crate::state::pick_counter::PickCounter;
 use crate::state::referral::Referral;
 use crate::state::round::{Round, RoundState};
 use crate::state::ticket::Ticket;
@@ -41,14 +42,30 @@ pub struct ClaimWinnings<'info> {
     )]
     pub ticket: Box<Account<'info, Ticket>>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Box<Account<'info, Mint>>,
+    /// Counter for the (round, pick) the ticket holds. Created at buy time; read-only at
+    /// claim time. The counter's `count` is the divisor that ensures duplicate winners on
+    /// a shared pick split that pick's allocation evenly instead of each receiving the
+    /// full per-combo amount.
+    #[account(
+        seeds = [
+            PICK_COUNTER_SEED,
+            &ticket.round_id.to_le_bytes(),
+            &ticket.normals,
+            &[ticket.bonusball],
+        ],
+        bump = pick_counter.bump,
+        constraint = pick_counter.round_id == ticket.round_id @ LotteryError::InvalidPickCounter,
+    )]
+    pub pick_counter: Box<Account<'info, PickCounter>>,
+
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
-        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [PRIZE_VAULT_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
@@ -59,7 +76,7 @@ pub struct ClaimWinnings<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = owner,
     )]
     pub winner_token_account: Box<Account<'info, TokenAccount>>,
@@ -89,6 +106,7 @@ pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
 
     let round = &mut ctx.accounts.round;
     let ticket = &mut ctx.accounts.ticket;
+    let pick_counter = &ctx.accounts.pick_counter;
 
     require!(
         matches!(round.state, RoundState::Claimable | RoundState::Archived),
@@ -101,7 +119,8 @@ pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
     );
     require!(!ticket.claimed, LotteryError::TicketAlreadyClaimed);
 
-    // Derive tier on the fly from the ticket's numbers vs. the round's winning numbers.
+    // Compute tier from the ticket's pick + the round's winning numbers. No
+    // intermediate registration step exists — claim directly verifies the win.
     let (matches, has_bonus) = count_matches(
         &ticket.normals,
         ticket.bonusball,
@@ -109,12 +128,23 @@ pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
         round.winning_bonusball,
     );
     let tier = tier_for_match(matches, has_bonus) as usize;
+    require!(
+        tier < round.tier_is_winning.len(),
+        LotteryError::NotAWinningTier
+    );
     require!(round.tier_is_winning[tier], LotteryError::NotAWinningTier);
 
-    let gross = round.payout_per_winner[tier];
+    let per_combo = round.per_combo_payout[tier];
+    require!(per_combo > 0, LotteryError::NoTierWinners);
+
+    // Counter is incremented at buy-time for every ticket that shares this pick. So
+    // `count >= 1` for any legitimately-purchased ticket. Divide the per-combo payout
+    // by the actual ticket count to split the allocation among duplicate winners.
+    require!(pick_counter.count > 0, LotteryError::InvalidPickCounter);
+    let counter = pick_counter.count as u64;
+    let gross = per_combo / counter;
     require!(gross > 0, LotteryError::NoTierWinners);
 
-    // Referral payouts at claim time: first-order + optional second-order.
     let referral_first_amount = if ticket.has_referrer {
         let r = ctx
             .accounts
@@ -170,14 +200,14 @@ pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.prize_vault.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.winner_token_account.to_account_info(),
                     authority: ctx.accounts.prize_vault_authority.to_account_info(),
                 },
                 signers,
             ),
             net_to_winner,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
     }
 

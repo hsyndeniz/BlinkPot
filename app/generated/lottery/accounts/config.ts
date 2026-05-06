@@ -64,7 +64,20 @@ export function getConfigDiscriminatorBytes() {
 export type Config = {
   discriminator: ReadonlyUint8Array;
   admin: Address;
-  usdcMint: Address;
+  /**
+   * SPL Token mint used as the settlement currency for tickets, prizes, LP, and
+   * referrals. Pinned at `initialize_config` and immutable thereafter — every
+   * instruction validates inbound mint accounts via `address = config.payment_mint`.
+   * Can be USDC, USDT, PYUSD, or any standard SPL Token mint; the program's logic
+   * is decimals-agnostic and reads `payment_decimals` for transfer_checked CPIs.
+   */
+  paymentMint: Address;
+  /**
+   * Decimals of `payment_mint`, snapshot at init time. The mint address is pinned
+   * and SPL mint decimals are immutable, so this is a stable snapshot used as the
+   * canonical decimals source for `transfer_checked` and for off-chain consumers.
+   */
+  paymentDecimals: number;
   prizeVaultAuthorityBump: number;
   lpAuthorityBump: number;
   bump: number;
@@ -90,12 +103,25 @@ export type Config = {
   untakenTierDestination: UntakenTierDestination;
   dynamicBonusballEnabled: boolean;
   bonusballBase: number;
-  bonusballPoolStepUsdc: bigint;
+  bonusballPoolStepUnits: bigint;
 };
 
 export type ConfigArgs = {
   admin: Address;
-  usdcMint: Address;
+  /**
+   * SPL Token mint used as the settlement currency for tickets, prizes, LP, and
+   * referrals. Pinned at `initialize_config` and immutable thereafter — every
+   * instruction validates inbound mint accounts via `address = config.payment_mint`.
+   * Can be USDC, USDT, PYUSD, or any standard SPL Token mint; the program's logic
+   * is decimals-agnostic and reads `payment_decimals` for transfer_checked CPIs.
+   */
+  paymentMint: Address;
+  /**
+   * Decimals of `payment_mint`, snapshot at init time. The mint address is pinned
+   * and SPL mint decimals are immutable, so this is a stable snapshot used as the
+   * canonical decimals source for `transfer_checked` and for off-chain consumers.
+   */
+  paymentDecimals: number;
   prizeVaultAuthorityBump: number;
   lpAuthorityBump: number;
   bump: number;
@@ -121,7 +147,7 @@ export type ConfigArgs = {
   untakenTierDestination: UntakenTierDestinationArgs;
   dynamicBonusballEnabled: boolean;
   bonusballBase: number;
-  bonusballPoolStepUsdc: number | bigint;
+  bonusballPoolStepUnits: number | bigint;
 };
 
 /** Gets the encoder for {@link ConfigArgs} account data. */
@@ -130,7 +156,8 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["admin", getAddressEncoder()],
-      ["usdcMint", getAddressEncoder()],
+      ["paymentMint", getAddressEncoder()],
+      ["paymentDecimals", getU8Encoder()],
       ["prizeVaultAuthorityBump", getU8Encoder()],
       ["lpAuthorityBump", getU8Encoder()],
       ["bump", getU8Encoder()],
@@ -159,7 +186,7 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
       ["untakenTierDestination", getUntakenTierDestinationEncoder()],
       ["dynamicBonusballEnabled", getBooleanEncoder()],
       ["bonusballBase", getU8Encoder()],
-      ["bonusballPoolStepUsdc", getU64Encoder()],
+      ["bonusballPoolStepUnits", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: CONFIG_DISCRIMINATOR }),
   );
@@ -170,7 +197,8 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["admin", getAddressDecoder()],
-    ["usdcMint", getAddressDecoder()],
+    ["paymentMint", getAddressDecoder()],
+    ["paymentDecimals", getU8Decoder()],
     ["prizeVaultAuthorityBump", getU8Decoder()],
     ["lpAuthorityBump", getU8Decoder()],
     ["bump", getU8Decoder()],
@@ -196,7 +224,7 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
     ["untakenTierDestination", getUntakenTierDestinationDecoder()],
     ["dynamicBonusballEnabled", getBooleanDecoder()],
     ["bonusballBase", getU8Decoder()],
-    ["bonusballPoolStepUsdc", getU64Decoder()],
+    ["bonusballPoolStepUnits", getU64Decoder()],
   ]);
 }
 
@@ -259,5 +287,5 @@ export async function fetchAllMaybeConfig(
 }
 
 export function getConfigSize(): number {
-  return 276;
+  return 277;
 }

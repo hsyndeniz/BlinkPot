@@ -18,7 +18,7 @@ const EXPECTED_SB_PID: Pubkey = ON_DEMAND_MAINNET_PID;
 use crate::constants::{CONFIG_SEED, ROUND_SEED};
 use crate::errors::LotteryError;
 use crate::events::{DrawCommitted, DrawSettled};
-use crate::math::{compute_payouts_per_winner, derive_winning_numbers};
+use crate::math::{compute_per_combo_payouts, derive_winning_numbers};
 use crate::state::config::Config;
 use crate::state::round::{Round, RoundState};
 
@@ -174,6 +174,10 @@ pub struct RevealDraw<'info> {
 }
 
 pub fn reveal_draw(ctx: Context<RevealDraw>) -> Result<()> {
+    // Mirror commit_draw: an operational pause must also gate the reveal half of the
+    // draw. Without this, anyone could push a committed round to Claimable while the
+    // protocol is paused, opening the claim window unintentionally.
+    require!(!ctx.accounts.config.paused, LotteryError::Paused);
     require!(
         !ctx.accounts.config.emergency_mode,
         LotteryError::EmergencyMode
@@ -220,9 +224,12 @@ pub fn reveal_draw(ctx: Context<RevealDraw>) -> Result<()> {
     let (normals, bonusball) =
         derive_winning_numbers(&bytes, round.normal_ball_max, round.bonusball_max)?;
 
-    // Compute the fixed per-tier payout for every winning ticket, freezing the prize-pool
-    // -> tier split here so claims become a pure lookup.
-    let plan = compute_payouts_per_winner(
+    // Compute per-combo payouts inline. Duplicate-winner protection lives in claim:
+    // `gross = per_combo_payout[tier] / pick_counter.count`, where the counter was
+    // incremented at every ticket buy that shared the same pick. So unlike the older
+    // register/finalize handshake, claim is open immediately and stays open as long
+    // as the round is Claimable or Archived — users can claim minutes or months later.
+    let plan = compute_per_combo_payouts(
         round.prize_pool,
         round.normal_ball_max,
         round.bonusball_max,
@@ -234,16 +241,16 @@ pub fn reveal_draw(ctx: Context<RevealDraw>) -> Result<()> {
 
     round.winning_normals = normals;
     round.winning_bonusball = bonusball;
-    round.payout_per_winner = plan.payout_per_winner;
-    round.used_minimum_payouts = plan.used_minimum_payouts;
     round.state = RoundState::Claimable;
     round.settled_at = clock.unix_timestamp;
+    round.per_combo_payout = plan.per_combo_payout;
+    round.used_minimum_payouts = plan.used_minimum_payouts;
 
     emit!(DrawSettled {
         round_id: round.round_id,
         winning_normals: normals,
         winning_bonusball: bonusball,
-        payout_per_winner: plan.payout_per_winner,
+        per_combo_payout: plan.per_combo_payout,
         used_minimum_payouts: plan.used_minimum_payouts,
     });
     Ok(())

@@ -72,7 +72,7 @@ export type ProcessSubscriptionInstruction<
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountSubscription extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountSubEscrow extends string | AccountMeta<string> = string,
   TAccountPrizeVault extends string | AccountMeta<string> = string,
   TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
@@ -109,9 +109,9 @@ export type ProcessSubscriptionInstruction<
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
         : TAccountRound,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountSubEscrow extends string
         ? WritableAccount<TAccountSubEscrow>
         : TAccountSubEscrow,
@@ -197,7 +197,7 @@ export type ProcessSubscriptionAsyncInput<
   TAccountConfig extends string = string,
   TAccountSubscription extends string = string,
   TAccountRound extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountSubEscrow extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
@@ -216,7 +216,7 @@ export type ProcessSubscriptionAsyncInput<
   config?: Address<TAccountConfig>;
   subscription?: Address<TAccountSubscription>;
   round: Address<TAccountRound>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   subEscrow?: Address<TAccountSubEscrow>;
   prizeVault?: Address<TAccountPrizeVault>;
   prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
@@ -238,7 +238,7 @@ export async function getProcessSubscriptionInstructionAsync<
   TAccountConfig extends string,
   TAccountSubscription extends string,
   TAccountRound extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountSubEscrow extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
@@ -259,7 +259,7 @@ export async function getProcessSubscriptionInstructionAsync<
     TAccountConfig,
     TAccountSubscription,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -282,7 +282,7 @@ export async function getProcessSubscriptionInstructionAsync<
     TAccountConfig,
     TAccountSubscription,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -307,7 +307,7 @@ export async function getProcessSubscriptionInstructionAsync<
     config: { value: input.config ?? null, isWritable: false },
     subscription: { value: input.subscription ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     subEscrow: { value: input.subEscrow ?? null, isWritable: true },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
@@ -347,12 +347,12 @@ export async function getProcessSubscriptionInstructionAsync<
   if (!accounts.subEscrow.value) {
     accounts.subEscrow.value = await findSubEscrowPda({
       owner: expectAddress(accounts.owner.value),
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.prizeVault.value) {
     accounts.prizeVault.value = await findPrizeVaultPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.prizeVaultAuthority.value) {
@@ -366,7 +366,7 @@ export async function getProcessSubscriptionInstructionAsync<
   }
   if (!accounts.lpPrincipal.value) {
     accounts.lpPrincipal.value = await findLpPrincipalPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.tokenProgram.value) {
@@ -390,7 +390,7 @@ export async function getProcessSubscriptionInstructionAsync<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.subscription),
       getAccountMeta(accounts.round),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.subEscrow),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
@@ -415,7 +415,7 @@ export async function getProcessSubscriptionInstructionAsync<
     TAccountConfig,
     TAccountSubscription,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -437,7 +437,7 @@ export type ProcessSubscriptionInput<
   TAccountConfig extends string = string,
   TAccountSubscription extends string = string,
   TAccountRound extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountSubEscrow extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
@@ -456,7 +456,7 @@ export type ProcessSubscriptionInput<
   config: Address<TAccountConfig>;
   subscription: Address<TAccountSubscription>;
   round: Address<TAccountRound>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   subEscrow: Address<TAccountSubEscrow>;
   prizeVault: Address<TAccountPrizeVault>;
   prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
@@ -478,7 +478,7 @@ export function getProcessSubscriptionInstruction<
   TAccountConfig extends string,
   TAccountSubscription extends string,
   TAccountRound extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountSubEscrow extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
@@ -499,7 +499,7 @@ export function getProcessSubscriptionInstruction<
     TAccountConfig,
     TAccountSubscription,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -521,7 +521,7 @@ export function getProcessSubscriptionInstruction<
   TAccountConfig,
   TAccountSubscription,
   TAccountRound,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountSubEscrow,
   TAccountPrizeVault,
   TAccountPrizeVaultAuthority,
@@ -545,7 +545,7 @@ export function getProcessSubscriptionInstruction<
     config: { value: input.config ?? null, isWritable: false },
     subscription: { value: input.subscription ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     subEscrow: { value: input.subEscrow ?? null, isWritable: true },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
@@ -595,7 +595,7 @@ export function getProcessSubscriptionInstruction<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.subscription),
       getAccountMeta(accounts.round),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.subEscrow),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
@@ -620,7 +620,7 @@ export function getProcessSubscriptionInstruction<
     TAccountConfig,
     TAccountSubscription,
     TAccountRound,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
@@ -647,7 +647,7 @@ export type ParsedProcessSubscriptionInstruction<
     config: TAccountMetas[2];
     subscription: TAccountMetas[3];
     round: TAccountMetas[4];
-    usdcMint: TAccountMetas[5];
+    paymentMint: TAccountMetas[5];
     subEscrow: TAccountMetas[6];
     prizeVault: TAccountMetas[7];
     prizeVaultAuthority: TAccountMetas[8];
@@ -696,7 +696,7 @@ export function parseProcessSubscriptionInstruction<
       config: getNextAccount(),
       subscription: getNextAccount(),
       round: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       subEscrow: getNextAccount(),
       prizeVault: getNextAccount(),
       prizeVaultAuthority: getNextAccount(),

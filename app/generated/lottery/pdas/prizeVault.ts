@@ -15,7 +15,7 @@ import {
 } from "@solana/kit";
 
 export type PrizeVaultSeeds = {
-  usdcMint: Address;
+  paymentMint: Address;
 };
 
 export async function findPrizeVaultPda(
@@ -34,7 +34,7 @@ export async function findPrizeVaultPda(
           107, 101, 110,
         ]),
       ),
-      getAddressEncoder().encode(seeds.usdcMint),
+      getAddressEncoder().encode(seeds.paymentMint),
     ],
   });
 }

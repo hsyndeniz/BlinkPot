@@ -58,7 +58,7 @@ export type ConfigParams = {
    */
   tierPremiumWeightBps: Array<number>;
   /**
-   * Guaranteed minimum payout per winner per tier (USDC base units).
+   * Guaranteed minimum payout per winner per tier (in payment-mint base units).
    * 0 = no minimum for that tier.
    */
   tierMinPayoutPerWinner: Array<bigint>;
@@ -78,8 +78,11 @@ export type ConfigParams = {
   /** Dynamic bonusball: when enabled, bonusball_max scales with prize pool size. */
   dynamicBonusballEnabled: boolean;
   bonusballBase: number;
-  /** USDC base-unit step that adds 1 to bonusball_max. */
-  bonusballPoolStepUsdc: bigint;
+  /**
+   * Payment-mint base-unit step that adds 1 to bonusball_max. Configure for the
+   * chosen mint's decimals (e.g. for a 6-dec mint, 10_000_000_000 = 10K USD).
+   */
+  bonusballPoolStepUnits: bigint;
 };
 
 export type ConfigParamsArgs = {
@@ -107,7 +110,7 @@ export type ConfigParamsArgs = {
    */
   tierPremiumWeightBps: Array<number>;
   /**
-   * Guaranteed minimum payout per winner per tier (USDC base units).
+   * Guaranteed minimum payout per winner per tier (in payment-mint base units).
    * 0 = no minimum for that tier.
    */
   tierMinPayoutPerWinner: Array<number | bigint>;
@@ -127,8 +130,11 @@ export type ConfigParamsArgs = {
   /** Dynamic bonusball: when enabled, bonusball_max scales with prize pool size. */
   dynamicBonusballEnabled: boolean;
   bonusballBase: number;
-  /** USDC base-unit step that adds 1 to bonusball_max. */
-  bonusballPoolStepUsdc: number | bigint;
+  /**
+   * Payment-mint base-unit step that adds 1 to bonusball_max. Configure for the
+   * chosen mint's decimals (e.g. for a 6-dec mint, 10_000_000_000 = 10K USD).
+   */
+  bonusballPoolStepUnits: number | bigint;
 };
 
 export function getConfigParamsEncoder(): FixedSizeEncoder<ConfigParamsArgs> {
@@ -153,7 +159,7 @@ export function getConfigParamsEncoder(): FixedSizeEncoder<ConfigParamsArgs> {
     ["untakenTierDestination", getUntakenTierDestinationEncoder()],
     ["dynamicBonusballEnabled", getBooleanEncoder()],
     ["bonusballBase", getU8Encoder()],
-    ["bonusballPoolStepUsdc", getU64Encoder()],
+    ["bonusballPoolStepUnits", getU64Encoder()],
   ]);
 }
 
@@ -179,7 +185,7 @@ export function getConfigParamsDecoder(): FixedSizeDecoder<ConfigParams> {
     ["untakenTierDestination", getUntakenTierDestinationDecoder()],
     ["dynamicBonusballEnabled", getBooleanDecoder()],
     ["bonusballBase", getU8Decoder()],
-    ["bonusballPoolStepUsdc", getU64Decoder()],
+    ["bonusballPoolStepUnits", getU64Decoder()],
   ]);
 }
 

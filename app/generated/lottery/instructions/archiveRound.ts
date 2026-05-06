@@ -61,7 +61,7 @@ export type ArchiveRoundInstruction<
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
   TAccountLpVault extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountPrizeVault extends string | AccountMeta<string> = string,
   TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
   TAccountLpPrincipal extends string | AccountMeta<string> = string,
@@ -86,9 +86,9 @@ export type ArchiveRoundInstruction<
       TAccountLpVault extends string
         ? WritableAccount<TAccountLpVault>
         : TAccountLpVault,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountPrizeVault extends string
         ? WritableAccount<TAccountPrizeVault>
         : TAccountPrizeVault,
@@ -140,7 +140,7 @@ export type ArchiveRoundAsyncInput<
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
   TAccountLpVault extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountLpPrincipal extends string = string,
@@ -151,7 +151,7 @@ export type ArchiveRoundAsyncInput<
   config?: Address<TAccountConfig>;
   round: Address<TAccountRound>;
   lpVault?: Address<TAccountLpVault>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   prizeVault?: Address<TAccountPrizeVault>;
   prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
   lpPrincipal?: Address<TAccountLpPrincipal>;
@@ -164,7 +164,7 @@ export async function getArchiveRoundInstructionAsync<
   TAccountConfig extends string,
   TAccountRound extends string,
   TAccountLpVault extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountLpPrincipal extends string,
@@ -177,7 +177,7 @@ export async function getArchiveRoundInstructionAsync<
     TAccountConfig,
     TAccountRound,
     TAccountLpVault,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpPrincipal,
@@ -192,7 +192,7 @@ export async function getArchiveRoundInstructionAsync<
     TAccountConfig,
     TAccountRound,
     TAccountLpVault,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpPrincipal,
@@ -209,7 +209,7 @@ export async function getArchiveRoundInstructionAsync<
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
       value: input.prizeVaultAuthority ?? null,
@@ -233,7 +233,7 @@ export async function getArchiveRoundInstructionAsync<
   }
   if (!accounts.prizeVault.value) {
     accounts.prizeVault.value = await findPrizeVaultPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.prizeVaultAuthority.value) {
@@ -241,7 +241,7 @@ export async function getArchiveRoundInstructionAsync<
   }
   if (!accounts.lpPrincipal.value) {
     accounts.lpPrincipal.value = await findLpPrincipalPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.lpAuthority.value) {
@@ -259,7 +259,7 @@ export async function getArchiveRoundInstructionAsync<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
       getAccountMeta(accounts.lpVault),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.lpPrincipal),
@@ -274,7 +274,7 @@ export async function getArchiveRoundInstructionAsync<
     TAccountConfig,
     TAccountRound,
     TAccountLpVault,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpPrincipal,
@@ -288,7 +288,7 @@ export type ArchiveRoundInput<
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
   TAccountLpVault extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountLpPrincipal extends string = string,
@@ -299,7 +299,7 @@ export type ArchiveRoundInput<
   config: Address<TAccountConfig>;
   round: Address<TAccountRound>;
   lpVault: Address<TAccountLpVault>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   prizeVault: Address<TAccountPrizeVault>;
   prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
   lpPrincipal: Address<TAccountLpPrincipal>;
@@ -312,7 +312,7 @@ export function getArchiveRoundInstruction<
   TAccountConfig extends string,
   TAccountRound extends string,
   TAccountLpVault extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountLpPrincipal extends string,
@@ -325,7 +325,7 @@ export function getArchiveRoundInstruction<
     TAccountConfig,
     TAccountRound,
     TAccountLpVault,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpPrincipal,
@@ -339,7 +339,7 @@ export function getArchiveRoundInstruction<
   TAccountConfig,
   TAccountRound,
   TAccountLpVault,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountPrizeVault,
   TAccountPrizeVaultAuthority,
   TAccountLpPrincipal,
@@ -355,7 +355,7 @@ export function getArchiveRoundInstruction<
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
       value: input.prizeVaultAuthority ?? null,
@@ -383,7 +383,7 @@ export function getArchiveRoundInstruction<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
       getAccountMeta(accounts.lpVault),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.lpPrincipal),
@@ -398,7 +398,7 @@ export function getArchiveRoundInstruction<
     TAccountConfig,
     TAccountRound,
     TAccountLpVault,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountLpPrincipal,
@@ -417,7 +417,7 @@ export type ParsedArchiveRoundInstruction<
     config: TAccountMetas[1];
     round: TAccountMetas[2];
     lpVault: TAccountMetas[3];
-    usdcMint: TAccountMetas[4];
+    paymentMint: TAccountMetas[4];
     prizeVault: TAccountMetas[5];
     prizeVaultAuthority: TAccountMetas[6];
     lpPrincipal: TAccountMetas[7];
@@ -452,7 +452,7 @@ export function parseArchiveRoundInstruction<
       config: getNextAccount(),
       round: getNextAccount(),
       lpVault: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       prizeVault: getNextAccount(),
       prizeVaultAuthority: getNextAccount(),
       lpPrincipal: getNextAccount(),

@@ -119,4 +119,7 @@ pub enum LotteryError {
     InvalidTokenMint,
     #[msg("Round is not in Emergency state")]
     RoundNotEmergency,
+
+    #[msg("Pick counter PDA does not match the ticket's pick")]
+    InvalidPickCounter,
 }

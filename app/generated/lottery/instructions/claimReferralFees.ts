@@ -58,7 +58,7 @@ export type ClaimReferralFeesInstruction<
   TAccountReferrer extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountReferral extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountPrizeVault extends string | AccountMeta<string> = string,
   TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
   TAccountReferrerTokenAccount extends string | AccountMeta<string> = string,
@@ -79,9 +79,9 @@ export type ClaimReferralFeesInstruction<
       TAccountReferral extends string
         ? WritableAccount<TAccountReferral>
         : TAccountReferral,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountPrizeVault extends string
         ? WritableAccount<TAccountPrizeVault>
         : TAccountPrizeVault,
@@ -131,7 +131,7 @@ export type ClaimReferralFeesAsyncInput<
   TAccountReferrer extends string = string,
   TAccountConfig extends string = string,
   TAccountReferral extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountReferrerTokenAccount extends string = string,
@@ -140,7 +140,7 @@ export type ClaimReferralFeesAsyncInput<
   referrer: TransactionSigner<TAccountReferrer>;
   config?: Address<TAccountConfig>;
   referral?: Address<TAccountReferral>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   prizeVault?: Address<TAccountPrizeVault>;
   prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
   referrerTokenAccount: Address<TAccountReferrerTokenAccount>;
@@ -151,7 +151,7 @@ export async function getClaimReferralFeesInstructionAsync<
   TAccountReferrer extends string,
   TAccountConfig extends string,
   TAccountReferral extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountReferrerTokenAccount extends string,
@@ -162,7 +162,7 @@ export async function getClaimReferralFeesInstructionAsync<
     TAccountReferrer,
     TAccountConfig,
     TAccountReferral,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountReferrerTokenAccount,
@@ -175,7 +175,7 @@ export async function getClaimReferralFeesInstructionAsync<
     TAccountReferrer,
     TAccountConfig,
     TAccountReferral,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountReferrerTokenAccount,
@@ -190,7 +190,7 @@ export async function getClaimReferralFeesInstructionAsync<
     referrer: { value: input.referrer ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     referral: { value: input.referral ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
       value: input.prizeVaultAuthority ?? null,
@@ -218,7 +218,7 @@ export async function getClaimReferralFeesInstructionAsync<
   }
   if (!accounts.prizeVault.value) {
     accounts.prizeVault.value = await findPrizeVaultPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.prizeVaultAuthority.value) {
@@ -235,7 +235,7 @@ export async function getClaimReferralFeesInstructionAsync<
       getAccountMeta(accounts.referrer),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.referral),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.referrerTokenAccount),
@@ -248,7 +248,7 @@ export async function getClaimReferralFeesInstructionAsync<
     TAccountReferrer,
     TAccountConfig,
     TAccountReferral,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountReferrerTokenAccount,
@@ -260,7 +260,7 @@ export type ClaimReferralFeesInput<
   TAccountReferrer extends string = string,
   TAccountConfig extends string = string,
   TAccountReferral extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountPrizeVault extends string = string,
   TAccountPrizeVaultAuthority extends string = string,
   TAccountReferrerTokenAccount extends string = string,
@@ -269,7 +269,7 @@ export type ClaimReferralFeesInput<
   referrer: TransactionSigner<TAccountReferrer>;
   config: Address<TAccountConfig>;
   referral: Address<TAccountReferral>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   prizeVault: Address<TAccountPrizeVault>;
   prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
   referrerTokenAccount: Address<TAccountReferrerTokenAccount>;
@@ -280,7 +280,7 @@ export function getClaimReferralFeesInstruction<
   TAccountReferrer extends string,
   TAccountConfig extends string,
   TAccountReferral extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountPrizeVault extends string,
   TAccountPrizeVaultAuthority extends string,
   TAccountReferrerTokenAccount extends string,
@@ -291,7 +291,7 @@ export function getClaimReferralFeesInstruction<
     TAccountReferrer,
     TAccountConfig,
     TAccountReferral,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountReferrerTokenAccount,
@@ -303,7 +303,7 @@ export function getClaimReferralFeesInstruction<
   TAccountReferrer,
   TAccountConfig,
   TAccountReferral,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountPrizeVault,
   TAccountPrizeVaultAuthority,
   TAccountReferrerTokenAccount,
@@ -317,7 +317,7 @@ export function getClaimReferralFeesInstruction<
     referrer: { value: input.referrer ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     referral: { value: input.referral ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     prizeVault: { value: input.prizeVault ?? null, isWritable: true },
     prizeVaultAuthority: {
       value: input.prizeVaultAuthority ?? null,
@@ -346,7 +346,7 @@ export function getClaimReferralFeesInstruction<
       getAccountMeta(accounts.referrer),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.referral),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.prizeVault),
       getAccountMeta(accounts.prizeVaultAuthority),
       getAccountMeta(accounts.referrerTokenAccount),
@@ -359,7 +359,7 @@ export function getClaimReferralFeesInstruction<
     TAccountReferrer,
     TAccountConfig,
     TAccountReferral,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountPrizeVault,
     TAccountPrizeVaultAuthority,
     TAccountReferrerTokenAccount,
@@ -376,7 +376,7 @@ export type ParsedClaimReferralFeesInstruction<
     referrer: TAccountMetas[0];
     config: TAccountMetas[1];
     referral: TAccountMetas[2];
-    usdcMint: TAccountMetas[3];
+    paymentMint: TAccountMetas[3];
     prizeVault: TAccountMetas[4];
     prizeVaultAuthority: TAccountMetas[5];
     referrerTokenAccount: TAccountMetas[6];
@@ -409,7 +409,7 @@ export function parseClaimReferralFeesInstruction<
       referrer: getNextAccount(),
       config: getNextAccount(),
       referral: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       prizeVault: getNextAccount(),
       prizeVaultAuthority: getNextAccount(),
       referrerTokenAccount: getNextAccount(),

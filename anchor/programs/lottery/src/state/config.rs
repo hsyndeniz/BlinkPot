@@ -40,7 +40,7 @@ pub struct ConfigParams {
     /// Premium pool weights per tier in BPS (must sum to exactly 10_000).
     /// Non-winning tiers must have weight 0.
     pub tier_premium_weight_bps: [u16; TIER_COUNT],
-    /// Guaranteed minimum payout per winner per tier (USDC base units).
+    /// Guaranteed minimum payout per winner per tier (in payment-mint base units).
     /// 0 = no minimum for that tier.
     pub tier_min_payout_per_winner: [u64; TIER_COUNT],
     /// Whether a tier is claimable. Megapot defaults: tier 0 (no match) and tier 2
@@ -57,14 +57,24 @@ pub struct ConfigParams {
     /// Dynamic bonusball: when enabled, bonusball_max scales with prize pool size.
     pub dynamic_bonusball_enabled: bool,
     pub bonusball_base: u8,
-    /// USDC base-unit step that adds 1 to bonusball_max.
-    pub bonusball_pool_step_usdc: u64,
+    /// Payment-mint base-unit step that adds 1 to bonusball_max. Configure for the
+    /// chosen mint's decimals (e.g. for a 6-dec mint, 10_000_000_000 = 10K USD).
+    pub bonusball_pool_step_units: u64,
 }
 
 #[account]
 pub struct Config {
     pub admin: Pubkey,
-    pub usdc_mint: Pubkey,
+    /// SPL Token mint used as the settlement currency for tickets, prizes, LP, and
+    /// referrals. Pinned at `initialize_config` and immutable thereafter — every
+    /// instruction validates inbound mint accounts via `address = config.payment_mint`.
+    /// Can be USDC, USDT, PYUSD, or any standard SPL Token mint; the program's logic
+    /// is decimals-agnostic and reads `payment_decimals` for transfer_checked CPIs.
+    pub payment_mint: Pubkey,
+    /// Decimals of `payment_mint`, snapshot at init time. The mint address is pinned
+    /// and SPL mint decimals are immutable, so this is a stable snapshot used as the
+    /// canonical decimals source for `transfer_checked` and for off-chain consumers.
+    pub payment_decimals: u8,
     pub prize_vault_authority_bump: u8,
     pub lp_authority_bump: u8,
     pub bump: u8,
@@ -96,12 +106,13 @@ pub struct Config {
 
     pub dynamic_bonusball_enabled: bool,
     pub bonusball_base: u8,
-    pub bonusball_pool_step_usdc: u64,
+    pub bonusball_pool_step_units: u64,
 }
 
 impl Config {
     pub const LEN: usize = 32          // admin
-        + 32                            // usdc_mint
+        + 32                            // payment_mint
+        + 1                             // payment_decimals
         + 1 + 1 + 1                     // bumps
         + 1 + 1                         // paused, emergency_mode
         + 8 + 8 + 8 + 2 + 8             // pricing/timing/guarantee/cap/draw_timeout
@@ -137,7 +148,7 @@ impl Config {
         self.untaken_tier_destination = params.untaken_tier_destination;
         self.dynamic_bonusball_enabled = params.dynamic_bonusball_enabled;
         self.bonusball_base = params.bonusball_base;
-        self.bonusball_pool_step_usdc = params.bonusball_pool_step_usdc;
+        self.bonusball_pool_step_units = params.bonusball_pool_step_units;
     }
 
     /// Total referral fee BPS (first + second).

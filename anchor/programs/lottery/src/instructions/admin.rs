@@ -3,9 +3,9 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::constants::{
     BPS_DENOM, CONFIG_SEED, LP_AUTHORITY_SEED, LP_PRINCIPAL_TOKEN_SEED, LP_VAULT_SEED,
-    MAX_BONUSBALL_MAX, MAX_GUARANTEE_PER_ROUND_BPS_CAP, MAX_ROUND_DURATION_SECS, MIN_BONUSBALL_MAX,
-    MIN_PRIZE_POOL_BPS, MIN_ROUND_DURATION_SECS, NORMAL_BALL_COUNT, PRIZE_VAULT_AUTHORITY_SEED,
-    PRIZE_VAULT_TOKEN_SEED, ROUND_COUNTER_SEED, TIER_COUNT,
+    MAX_BONUSBALL_MAX, MAX_GUARANTEE_PER_ROUND_BPS_CAP, MAX_ROUND_DURATION_SECS,
+    MIN_BONUSBALL_MAX, MIN_PRIZE_POOL_BPS, MIN_ROUND_DURATION_SECS, NORMAL_BALL_COUNT,
+    PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED, ROUND_COUNTER_SEED, TIER_COUNT,
 };
 use crate::errors::LotteryError;
 use crate::events::{ConfigInitialized, ConfigUpdated, EmergencyModeToggled, PausedToggled};
@@ -128,7 +128,7 @@ mod tests {
             untaken_tier_destination: UntakenTierDestination::NextRound,
             dynamic_bonusball_enabled: true,
             bonusball_base: 5,
-            bonusball_pool_step_usdc: 10_000_000_000,
+            bonusball_pool_step_units: 10_000_000_000,
         }
     }
 
@@ -176,7 +176,7 @@ pub struct InitializeConfig<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
 
-    pub usdc_mint: Account<'info, Mint>,
+    pub payment_mint: Account<'info, Mint>,
 
     #[account(
         init,
@@ -212,9 +212,9 @@ pub struct InitializeConfig<'info> {
     #[account(
         init,
         payer = admin,
-        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [PRIZE_VAULT_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = prize_vault_authority,
     )]
     pub prize_vault: Account<'info, TokenAccount>,
@@ -226,9 +226,9 @@ pub struct InitializeConfig<'info> {
     #[account(
         init,
         payer = admin,
-        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = lp_authority,
     )]
     pub lp_principal: Account<'info, TokenAccount>,
@@ -243,7 +243,12 @@ pub fn initialize_config(ctx: Context<InitializeConfig>, params: ConfigParams) -
 
     let config = &mut ctx.accounts.config;
     config.admin = ctx.accounts.admin.key();
-    config.usdc_mint = ctx.accounts.usdc_mint.key();
+    config.payment_mint = ctx.accounts.payment_mint.key();
+    // Snapshot decimals from the mint at init time. SPL mint decimals are immutable
+    // and the mint address is pinned via `address = config.payment_mint` everywhere,
+    // so this snapshot is the canonical decimals source for `transfer_checked` CPIs
+    // and for off-chain consumers that don't want to fetch the mint account.
+    config.payment_decimals = ctx.accounts.payment_mint.decimals;
     config.bump = ctx.bumps.config;
     config.prize_vault_authority_bump = ctx.bumps.prize_vault_authority;
     config.lp_authority_bump = ctx.bumps.lp_authority;
@@ -267,7 +272,7 @@ pub fn initialize_config(ctx: Context<InitializeConfig>, params: ConfigParams) -
 
     emit!(ConfigInitialized {
         admin: config.admin,
-        usdc_mint: config.usdc_mint,
+        payment_mint: config.payment_mint,
     });
     Ok(())
 }

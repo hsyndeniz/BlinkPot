@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 #[event]
 pub struct ConfigInitialized {
     pub admin: Pubkey,
-    pub usdc_mint: Pubkey,
+    pub payment_mint: Pubkey,
 }
 
 #[event]
@@ -60,7 +60,7 @@ pub struct DrawSettled {
     pub round_id: u64,
     pub winning_normals: [u8; 5],
     pub winning_bonusball: u8,
-    pub payout_per_winner: [u64; 12],
+    pub per_combo_payout: [u64; 12],
     pub used_minimum_payouts: bool,
 }
 
@@ -79,20 +79,23 @@ pub struct WinningsClaimed {
 pub struct LpDeposited {
     pub owner: Pubkey,
     pub amount: u64,
-    pub shares_minted: u64,
+    /// LP shares are stored on-chain as u128. The event uses u128 too so large LP
+    /// pools (>~$18M of first-deposit at 6-dec mints, proportionally lower at higher
+    /// decimals) don't silently saturate at u64::MAX in indexer feeds.
+    pub shares_minted: u128,
 }
 
 #[event]
 pub struct LpWithdrawalInitiated {
     pub owner: Pubkey,
-    pub shares: u64,
+    pub shares: u128,
     pub round_id: u64,
 }
 
 #[event]
 pub struct LpWithdrawalFinalized {
     pub owner: Pubkey,
-    pub shares: u64,
+    pub shares: u128,
     pub amount: u64,
 }
 
@@ -149,7 +152,7 @@ pub struct EmergencyTicketRefunded {
 #[event]
 pub struct EmergencyLpWithdrawn {
     pub owner: Pubkey,
-    pub shares: u64,
+    pub shares: u128,
     pub amount: u64,
 }
 

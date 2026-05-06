@@ -60,7 +60,7 @@ export type LpDepositInstruction<
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountLpVault extends string | AccountMeta<string> = string,
   TAccountPosition extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountOwnerTokenAccount extends string | AccountMeta<string> = string,
   TAccountLpPrincipal extends string | AccountMeta<string> = string,
   TAccountLpAuthority extends string | AccountMeta<string> = string,
@@ -88,9 +88,9 @@ export type LpDepositInstruction<
       TAccountPosition extends string
         ? WritableAccount<TAccountPosition>
         : TAccountPosition,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountOwnerTokenAccount extends string
         ? WritableAccount<TAccountOwnerTokenAccount>
         : TAccountOwnerTokenAccount,
@@ -152,7 +152,7 @@ export type LpDepositAsyncInput<
   TAccountConfig extends string = string,
   TAccountLpVault extends string = string,
   TAccountPosition extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountOwnerTokenAccount extends string = string,
   TAccountLpPrincipal extends string = string,
   TAccountLpAuthority extends string = string,
@@ -164,7 +164,7 @@ export type LpDepositAsyncInput<
   config?: Address<TAccountConfig>;
   lpVault?: Address<TAccountLpVault>;
   position?: Address<TAccountPosition>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
   lpPrincipal?: Address<TAccountLpPrincipal>;
   lpAuthority?: Address<TAccountLpAuthority>;
@@ -179,7 +179,7 @@ export async function getLpDepositInstructionAsync<
   TAccountConfig extends string,
   TAccountLpVault extends string,
   TAccountPosition extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountOwnerTokenAccount extends string,
   TAccountLpPrincipal extends string,
   TAccountLpAuthority extends string,
@@ -193,7 +193,7 @@ export async function getLpDepositInstructionAsync<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountLpPrincipal,
     TAccountLpAuthority,
@@ -209,7 +209,7 @@ export async function getLpDepositInstructionAsync<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountLpPrincipal,
     TAccountLpAuthority,
@@ -227,7 +227,7 @@ export async function getLpDepositInstructionAsync<
     config: { value: input.config ?? null, isWritable: false },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
     position: { value: input.position ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     ownerTokenAccount: {
       value: input.ownerTokenAccount ?? null,
       isWritable: true,
@@ -260,7 +260,7 @@ export async function getLpDepositInstructionAsync<
   }
   if (!accounts.lpPrincipal.value) {
     accounts.lpPrincipal.value = await findLpPrincipalPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.lpAuthority.value) {
@@ -286,7 +286,7 @@ export async function getLpDepositInstructionAsync<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.lpVault),
       getAccountMeta(accounts.position),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.ownerTokenAccount),
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.lpAuthority),
@@ -304,7 +304,7 @@ export async function getLpDepositInstructionAsync<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountLpPrincipal,
     TAccountLpAuthority,
@@ -319,7 +319,7 @@ export type LpDepositInput<
   TAccountConfig extends string = string,
   TAccountLpVault extends string = string,
   TAccountPosition extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountOwnerTokenAccount extends string = string,
   TAccountLpPrincipal extends string = string,
   TAccountLpAuthority extends string = string,
@@ -331,7 +331,7 @@ export type LpDepositInput<
   config: Address<TAccountConfig>;
   lpVault: Address<TAccountLpVault>;
   position: Address<TAccountPosition>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
   lpPrincipal: Address<TAccountLpPrincipal>;
   lpAuthority: Address<TAccountLpAuthority>;
@@ -346,7 +346,7 @@ export function getLpDepositInstruction<
   TAccountConfig extends string,
   TAccountLpVault extends string,
   TAccountPosition extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountOwnerTokenAccount extends string,
   TAccountLpPrincipal extends string,
   TAccountLpAuthority extends string,
@@ -360,7 +360,7 @@ export function getLpDepositInstruction<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountLpPrincipal,
     TAccountLpAuthority,
@@ -375,7 +375,7 @@ export function getLpDepositInstruction<
   TAccountConfig,
   TAccountLpVault,
   TAccountPosition,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountOwnerTokenAccount,
   TAccountLpPrincipal,
   TAccountLpAuthority,
@@ -392,7 +392,7 @@ export function getLpDepositInstruction<
     config: { value: input.config ?? null, isWritable: false },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
     position: { value: input.position ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     ownerTokenAccount: {
       value: input.ownerTokenAccount ?? null,
       isWritable: true,
@@ -432,7 +432,7 @@ export function getLpDepositInstruction<
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.lpVault),
       getAccountMeta(accounts.position),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.ownerTokenAccount),
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.lpAuthority),
@@ -450,7 +450,7 @@ export function getLpDepositInstruction<
     TAccountConfig,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountOwnerTokenAccount,
     TAccountLpPrincipal,
     TAccountLpAuthority,
@@ -470,7 +470,7 @@ export type ParsedLpDepositInstruction<
     config: TAccountMetas[1];
     lpVault: TAccountMetas[2];
     position: TAccountMetas[3];
-    usdcMint: TAccountMetas[4];
+    paymentMint: TAccountMetas[4];
     ownerTokenAccount: TAccountMetas[5];
     lpPrincipal: TAccountMetas[6];
     lpAuthority: TAccountMetas[7];
@@ -506,7 +506,7 @@ export function parseLpDepositInstruction<
       config: getNextAccount(),
       lpVault: getNextAccount(),
       position: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       ownerTokenAccount: getNextAccount(),
       lpPrincipal: getNextAccount(),
       lpAuthority: getNextAccount(),

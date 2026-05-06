@@ -63,7 +63,7 @@ export type LpFinalizeWithdrawInstruction<
   TAccountPendingRound extends string | AccountMeta<string> = string,
   TAccountLpVault extends string | AccountMeta<string> = string,
   TAccountPosition extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountLpPrincipal extends string | AccountMeta<string> = string,
   TAccountLpAuthority extends string | AccountMeta<string> = string,
   TAccountOwnerTokenAccount extends string | AccountMeta<string> = string,
@@ -93,9 +93,9 @@ export type LpFinalizeWithdrawInstruction<
       TAccountPosition extends string
         ? WritableAccount<TAccountPosition>
         : TAccountPosition,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountLpPrincipal extends string
         ? WritableAccount<TAccountLpPrincipal>
         : TAccountLpPrincipal,
@@ -151,7 +151,7 @@ export type LpFinalizeWithdrawAsyncInput<
   TAccountPendingRound extends string = string,
   TAccountLpVault extends string = string,
   TAccountPosition extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountLpPrincipal extends string = string,
   TAccountLpAuthority extends string = string,
   TAccountOwnerTokenAccount extends string = string,
@@ -163,7 +163,7 @@ export type LpFinalizeWithdrawAsyncInput<
   pendingRound: Address<TAccountPendingRound>;
   lpVault?: Address<TAccountLpVault>;
   position?: Address<TAccountPosition>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   lpPrincipal?: Address<TAccountLpPrincipal>;
   lpAuthority?: Address<TAccountLpAuthority>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
@@ -177,7 +177,7 @@ export async function getLpFinalizeWithdrawInstructionAsync<
   TAccountPendingRound extends string,
   TAccountLpVault extends string,
   TAccountPosition extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountLpPrincipal extends string,
   TAccountLpAuthority extends string,
   TAccountOwnerTokenAccount extends string,
@@ -191,7 +191,7 @@ export async function getLpFinalizeWithdrawInstructionAsync<
     TAccountPendingRound,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -207,7 +207,7 @@ export async function getLpFinalizeWithdrawInstructionAsync<
     TAccountPendingRound,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -225,7 +225,7 @@ export async function getLpFinalizeWithdrawInstructionAsync<
     pendingRound: { value: input.pendingRound ?? null, isWritable: false },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
     position: { value: input.position ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
     ownerTokenAccount: {
@@ -256,7 +256,7 @@ export async function getLpFinalizeWithdrawInstructionAsync<
   }
   if (!accounts.lpPrincipal.value) {
     accounts.lpPrincipal.value = await findLpPrincipalPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.lpAuthority.value) {
@@ -276,7 +276,7 @@ export async function getLpFinalizeWithdrawInstructionAsync<
       getAccountMeta(accounts.pendingRound),
       getAccountMeta(accounts.lpVault),
       getAccountMeta(accounts.position),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.lpAuthority),
       getAccountMeta(accounts.ownerTokenAccount),
@@ -292,7 +292,7 @@ export async function getLpFinalizeWithdrawInstructionAsync<
     TAccountPendingRound,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -307,7 +307,7 @@ export type LpFinalizeWithdrawInput<
   TAccountPendingRound extends string = string,
   TAccountLpVault extends string = string,
   TAccountPosition extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountLpPrincipal extends string = string,
   TAccountLpAuthority extends string = string,
   TAccountOwnerTokenAccount extends string = string,
@@ -319,7 +319,7 @@ export type LpFinalizeWithdrawInput<
   pendingRound: Address<TAccountPendingRound>;
   lpVault: Address<TAccountLpVault>;
   position: Address<TAccountPosition>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   lpPrincipal: Address<TAccountLpPrincipal>;
   lpAuthority: Address<TAccountLpAuthority>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
@@ -333,7 +333,7 @@ export function getLpFinalizeWithdrawInstruction<
   TAccountPendingRound extends string,
   TAccountLpVault extends string,
   TAccountPosition extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountLpPrincipal extends string,
   TAccountLpAuthority extends string,
   TAccountOwnerTokenAccount extends string,
@@ -347,7 +347,7 @@ export function getLpFinalizeWithdrawInstruction<
     TAccountPendingRound,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -362,7 +362,7 @@ export function getLpFinalizeWithdrawInstruction<
   TAccountPendingRound,
   TAccountLpVault,
   TAccountPosition,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountLpPrincipal,
   TAccountLpAuthority,
   TAccountOwnerTokenAccount,
@@ -379,7 +379,7 @@ export function getLpFinalizeWithdrawInstruction<
     pendingRound: { value: input.pendingRound ?? null, isWritable: false },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
     position: { value: input.position ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
     lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
     ownerTokenAccount: {
@@ -408,7 +408,7 @@ export function getLpFinalizeWithdrawInstruction<
       getAccountMeta(accounts.pendingRound),
       getAccountMeta(accounts.lpVault),
       getAccountMeta(accounts.position),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.lpPrincipal),
       getAccountMeta(accounts.lpAuthority),
       getAccountMeta(accounts.ownerTokenAccount),
@@ -424,7 +424,7 @@ export function getLpFinalizeWithdrawInstruction<
     TAccountPendingRound,
     TAccountLpVault,
     TAccountPosition,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountLpPrincipal,
     TAccountLpAuthority,
     TAccountOwnerTokenAccount,
@@ -444,7 +444,7 @@ export type ParsedLpFinalizeWithdrawInstruction<
     pendingRound: TAccountMetas[3];
     lpVault: TAccountMetas[4];
     position: TAccountMetas[5];
-    usdcMint: TAccountMetas[6];
+    paymentMint: TAccountMetas[6];
     lpPrincipal: TAccountMetas[7];
     lpAuthority: TAccountMetas[8];
     ownerTokenAccount: TAccountMetas[9];
@@ -480,7 +480,7 @@ export function parseLpFinalizeWithdrawInstruction<
       pendingRound: getNextAccount(),
       lpVault: getNextAccount(),
       position: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       lpPrincipal: getNextAccount(),
       lpAuthority: getNextAccount(),
       ownerTokenAccount: getNextAccount(),

@@ -90,14 +90,14 @@ pub struct ClaimReferralFees<'info> {
     )]
     pub referral: Account<'info, Referral>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Account<'info, Mint>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Account<'info, Mint>,
 
     #[account(
         mut,
-        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [PRIZE_VAULT_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = prize_vault_authority,
     )]
     pub prize_vault: Account<'info, TokenAccount>,
@@ -108,7 +108,7 @@ pub struct ClaimReferralFees<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = referrer,
     )]
     pub referrer_token_account: Account<'info, TokenAccount>,
@@ -134,14 +134,14 @@ pub fn claim_referral_fees(ctx: Context<ClaimReferralFees>) -> Result<()> {
             ctx.accounts.token_program.to_account_info(),
             TransferChecked {
                 from: ctx.accounts.prize_vault.to_account_info(),
-                mint: ctx.accounts.usdc_mint.to_account_info(),
+                mint: ctx.accounts.payment_mint.to_account_info(),
                 to: ctx.accounts.referrer_token_account.to_account_info(),
                 authority: ctx.accounts.prize_vault_authority.to_account_info(),
             },
             signers,
         ),
         amount,
-        ctx.accounts.usdc_mint.decimals,
+        ctx.accounts.config.payment_decimals,
     )?;
 
     ctx.accounts.referral.accrued = 0;

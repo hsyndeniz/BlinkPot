@@ -65,7 +65,7 @@ export function getInitializeConfigDiscriminatorBytes() {
 export type InitializeConfigInstruction<
   TProgram extends string = typeof LOTTERY_PROGRAM_ADDRESS,
   TAccountAdmin extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRoundCounter extends string | AccountMeta<string> = string,
   TAccountLpVault extends string | AccountMeta<string> = string,
@@ -88,9 +88,9 @@ export type InitializeConfigInstruction<
         ? WritableSignerAccount<TAccountAdmin> &
             AccountSignerMeta<TAccountAdmin>
         : TAccountAdmin,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountConfig extends string
         ? WritableAccount<TAccountConfig>
         : TAccountConfig,
@@ -161,7 +161,7 @@ export function getInitializeConfigInstructionDataCodec(): FixedSizeCodec<
 
 export type InitializeConfigAsyncInput<
   TAccountAdmin extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountConfig extends string = string,
   TAccountRoundCounter extends string = string,
   TAccountLpVault extends string = string,
@@ -174,7 +174,7 @@ export type InitializeConfigAsyncInput<
   TAccountRent extends string = string,
 > = {
   admin: TransactionSigner<TAccountAdmin>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   config?: Address<TAccountConfig>;
   roundCounter?: Address<TAccountRoundCounter>;
   lpVault?: Address<TAccountLpVault>;
@@ -190,7 +190,7 @@ export type InitializeConfigAsyncInput<
 
 export async function getInitializeConfigInstructionAsync<
   TAccountAdmin extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountConfig extends string,
   TAccountRoundCounter extends string,
   TAccountLpVault extends string,
@@ -205,7 +205,7 @@ export async function getInitializeConfigInstructionAsync<
 >(
   input: InitializeConfigAsyncInput<
     TAccountAdmin,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountConfig,
     TAccountRoundCounter,
     TAccountLpVault,
@@ -222,7 +222,7 @@ export async function getInitializeConfigInstructionAsync<
   InitializeConfigInstruction<
     TProgramAddress,
     TAccountAdmin,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountConfig,
     TAccountRoundCounter,
     TAccountLpVault,
@@ -241,7 +241,7 @@ export async function getInitializeConfigInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     admin: { value: input.admin ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     config: { value: input.config ?? null, isWritable: true },
     roundCounter: { value: input.roundCounter ?? null, isWritable: true },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
@@ -279,7 +279,7 @@ export async function getInitializeConfigInstructionAsync<
   }
   if (!accounts.prizeVault.value) {
     accounts.prizeVault.value = await findPrizeVaultPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.lpAuthority.value) {
@@ -287,7 +287,7 @@ export async function getInitializeConfigInstructionAsync<
   }
   if (!accounts.lpPrincipal.value) {
     accounts.lpPrincipal.value = await findLpPrincipalPda({
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.tokenProgram.value) {
@@ -307,7 +307,7 @@ export async function getInitializeConfigInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.admin),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.roundCounter),
       getAccountMeta(accounts.lpVault),
@@ -326,7 +326,7 @@ export async function getInitializeConfigInstructionAsync<
   } as InitializeConfigInstruction<
     TProgramAddress,
     TAccountAdmin,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountConfig,
     TAccountRoundCounter,
     TAccountLpVault,
@@ -342,7 +342,7 @@ export async function getInitializeConfigInstructionAsync<
 
 export type InitializeConfigInput<
   TAccountAdmin extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountConfig extends string = string,
   TAccountRoundCounter extends string = string,
   TAccountLpVault extends string = string,
@@ -355,7 +355,7 @@ export type InitializeConfigInput<
   TAccountRent extends string = string,
 > = {
   admin: TransactionSigner<TAccountAdmin>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   config: Address<TAccountConfig>;
   roundCounter: Address<TAccountRoundCounter>;
   lpVault: Address<TAccountLpVault>;
@@ -371,7 +371,7 @@ export type InitializeConfigInput<
 
 export function getInitializeConfigInstruction<
   TAccountAdmin extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountConfig extends string,
   TAccountRoundCounter extends string,
   TAccountLpVault extends string,
@@ -386,7 +386,7 @@ export function getInitializeConfigInstruction<
 >(
   input: InitializeConfigInput<
     TAccountAdmin,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountConfig,
     TAccountRoundCounter,
     TAccountLpVault,
@@ -402,7 +402,7 @@ export function getInitializeConfigInstruction<
 ): InitializeConfigInstruction<
   TProgramAddress,
   TAccountAdmin,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountConfig,
   TAccountRoundCounter,
   TAccountLpVault,
@@ -420,7 +420,7 @@ export function getInitializeConfigInstruction<
   // Original accounts.
   const originalAccounts = {
     admin: { value: input.admin ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     config: { value: input.config ?? null, isWritable: true },
     roundCounter: { value: input.roundCounter ?? null, isWritable: true },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
@@ -461,7 +461,7 @@ export function getInitializeConfigInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.admin),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.roundCounter),
       getAccountMeta(accounts.lpVault),
@@ -480,7 +480,7 @@ export function getInitializeConfigInstruction<
   } as InitializeConfigInstruction<
     TProgramAddress,
     TAccountAdmin,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountConfig,
     TAccountRoundCounter,
     TAccountLpVault,
@@ -501,7 +501,7 @@ export type ParsedInitializeConfigInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     admin: TAccountMetas[0];
-    usdcMint: TAccountMetas[1];
+    paymentMint: TAccountMetas[1];
     config: TAccountMetas[2];
     roundCounter: TAccountMetas[3];
     lpVault: TAccountMetas[4];
@@ -538,7 +538,7 @@ export function parseInitializeConfigInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       admin: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       config: getNextAccount(),
       roundCounter: getNextAccount(),
       lpVault: getNextAccount(),

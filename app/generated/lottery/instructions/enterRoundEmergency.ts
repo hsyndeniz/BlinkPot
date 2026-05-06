@@ -30,9 +30,19 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findConfigPda } from "../pdas";
+import {
+  findConfigPda,
+  findLpAuthorityPda,
+  findLpPrincipalPda,
+  findPrizeVaultAuthorityPda,
+  findPrizeVaultPda,
+} from "../pdas";
 import { LOTTERY_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import {
+  expectAddress,
+  getAccountMetaFactory,
+  type ResolvedAccount,
+} from "../shared";
 
 export const ENTER_ROUND_EMERGENCY_DISCRIMINATOR = new Uint8Array([
   226, 67, 30, 46, 177, 15, 207, 41,
@@ -49,6 +59,13 @@ export type EnterRoundEmergencyInstruction<
   TAccountAdmin extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
+  TAccountPrizeVault extends string | AccountMeta<string> = string,
+  TAccountPrizeVaultAuthority extends string | AccountMeta<string> = string,
+  TAccountLpPrincipal extends string | AccountMeta<string> = string,
+  TAccountLpAuthority extends string | AccountMeta<string> = string,
+  TAccountTokenProgram extends string | AccountMeta<string> =
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -64,6 +81,24 @@ export type EnterRoundEmergencyInstruction<
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
         : TAccountRound,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
+      TAccountPrizeVault extends string
+        ? WritableAccount<TAccountPrizeVault>
+        : TAccountPrizeVault,
+      TAccountPrizeVaultAuthority extends string
+        ? ReadonlyAccount<TAccountPrizeVaultAuthority>
+        : TAccountPrizeVaultAuthority,
+      TAccountLpPrincipal extends string
+        ? WritableAccount<TAccountLpPrincipal>
+        : TAccountLpPrincipal,
+      TAccountLpAuthority extends string
+        ? ReadonlyAccount<TAccountLpAuthority>
+        : TAccountLpAuthority,
+      TAccountTokenProgram extends string
+        ? ReadonlyAccount<TAccountTokenProgram>
+        : TAccountTokenProgram,
       ...TRemainingAccounts,
     ]
   >;
@@ -104,22 +139,46 @@ export type EnterRoundEmergencyAsyncInput<
   TAccountAdmin extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
+  TAccountPaymentMint extends string = string,
+  TAccountPrizeVault extends string = string,
+  TAccountPrizeVaultAuthority extends string = string,
+  TAccountLpPrincipal extends string = string,
+  TAccountLpAuthority extends string = string,
+  TAccountTokenProgram extends string = string,
 > = {
   admin: TransactionSigner<TAccountAdmin>;
   config?: Address<TAccountConfig>;
   round: Address<TAccountRound>;
+  paymentMint: Address<TAccountPaymentMint>;
+  prizeVault?: Address<TAccountPrizeVault>;
+  prizeVaultAuthority?: Address<TAccountPrizeVaultAuthority>;
+  lpPrincipal?: Address<TAccountLpPrincipal>;
+  lpAuthority?: Address<TAccountLpAuthority>;
+  tokenProgram?: Address<TAccountTokenProgram>;
 };
 
 export async function getEnterRoundEmergencyInstructionAsync<
   TAccountAdmin extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
+  TAccountPaymentMint extends string,
+  TAccountPrizeVault extends string,
+  TAccountPrizeVaultAuthority extends string,
+  TAccountLpPrincipal extends string,
+  TAccountLpAuthority extends string,
+  TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
   input: EnterRoundEmergencyAsyncInput<
     TAccountAdmin,
     TAccountConfig,
-    TAccountRound
+    TAccountRound,
+    TAccountPaymentMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -127,7 +186,13 @@ export async function getEnterRoundEmergencyInstructionAsync<
     TProgramAddress,
     TAccountAdmin,
     TAccountConfig,
-    TAccountRound
+    TAccountRound,
+    TAccountPaymentMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
   >
 > {
   // Program address.
@@ -138,6 +203,15 @@ export async function getEnterRoundEmergencyInstructionAsync<
     admin: { value: input.admin ?? null, isWritable: false },
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
+    prizeVault: { value: input.prizeVault ?? null, isWritable: true },
+    prizeVaultAuthority: {
+      value: input.prizeVaultAuthority ?? null,
+      isWritable: false,
+    },
+    lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
+    lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
+    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -148,6 +222,26 @@ export async function getEnterRoundEmergencyInstructionAsync<
   if (!accounts.config.value) {
     accounts.config.value = await findConfigPda();
   }
+  if (!accounts.prizeVault.value) {
+    accounts.prizeVault.value = await findPrizeVaultPda({
+      paymentMint: expectAddress(accounts.paymentMint.value),
+    });
+  }
+  if (!accounts.prizeVaultAuthority.value) {
+    accounts.prizeVaultAuthority.value = await findPrizeVaultAuthorityPda();
+  }
+  if (!accounts.lpPrincipal.value) {
+    accounts.lpPrincipal.value = await findLpPrincipalPda({
+      paymentMint: expectAddress(accounts.paymentMint.value),
+    });
+  }
+  if (!accounts.lpAuthority.value) {
+    accounts.lpAuthority.value = await findLpAuthorityPda();
+  }
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
@@ -155,6 +249,12 @@ export async function getEnterRoundEmergencyInstructionAsync<
       getAccountMeta(accounts.admin),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
+      getAccountMeta(accounts.paymentMint),
+      getAccountMeta(accounts.prizeVault),
+      getAccountMeta(accounts.prizeVaultAuthority),
+      getAccountMeta(accounts.lpPrincipal),
+      getAccountMeta(accounts.lpAuthority),
+      getAccountMeta(accounts.tokenProgram),
     ],
     data: getEnterRoundEmergencyInstructionDataEncoder().encode({}),
     programAddress,
@@ -162,7 +262,13 @@ export async function getEnterRoundEmergencyInstructionAsync<
     TProgramAddress,
     TAccountAdmin,
     TAccountConfig,
-    TAccountRound
+    TAccountRound,
+    TAccountPaymentMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
   >);
 }
 
@@ -170,25 +276,59 @@ export type EnterRoundEmergencyInput<
   TAccountAdmin extends string = string,
   TAccountConfig extends string = string,
   TAccountRound extends string = string,
+  TAccountPaymentMint extends string = string,
+  TAccountPrizeVault extends string = string,
+  TAccountPrizeVaultAuthority extends string = string,
+  TAccountLpPrincipal extends string = string,
+  TAccountLpAuthority extends string = string,
+  TAccountTokenProgram extends string = string,
 > = {
   admin: TransactionSigner<TAccountAdmin>;
   config: Address<TAccountConfig>;
   round: Address<TAccountRound>;
+  paymentMint: Address<TAccountPaymentMint>;
+  prizeVault: Address<TAccountPrizeVault>;
+  prizeVaultAuthority: Address<TAccountPrizeVaultAuthority>;
+  lpPrincipal: Address<TAccountLpPrincipal>;
+  lpAuthority: Address<TAccountLpAuthority>;
+  tokenProgram?: Address<TAccountTokenProgram>;
 };
 
 export function getEnterRoundEmergencyInstruction<
   TAccountAdmin extends string,
   TAccountConfig extends string,
   TAccountRound extends string,
+  TAccountPaymentMint extends string,
+  TAccountPrizeVault extends string,
+  TAccountPrizeVaultAuthority extends string,
+  TAccountLpPrincipal extends string,
+  TAccountLpAuthority extends string,
+  TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
-  input: EnterRoundEmergencyInput<TAccountAdmin, TAccountConfig, TAccountRound>,
+  input: EnterRoundEmergencyInput<
+    TAccountAdmin,
+    TAccountConfig,
+    TAccountRound,
+    TAccountPaymentMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
+  >,
   config?: { programAddress?: TProgramAddress },
 ): EnterRoundEmergencyInstruction<
   TProgramAddress,
   TAccountAdmin,
   TAccountConfig,
-  TAccountRound
+  TAccountRound,
+  TAccountPaymentMint,
+  TAccountPrizeVault,
+  TAccountPrizeVaultAuthority,
+  TAccountLpPrincipal,
+  TAccountLpAuthority,
+  TAccountTokenProgram
 > {
   // Program address.
   const programAddress = config?.programAddress ?? LOTTERY_PROGRAM_ADDRESS;
@@ -198,11 +338,26 @@ export function getEnterRoundEmergencyInstruction<
     admin: { value: input.admin ?? null, isWritable: false },
     config: { value: input.config ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
+    prizeVault: { value: input.prizeVault ?? null, isWritable: true },
+    prizeVaultAuthority: {
+      value: input.prizeVaultAuthority ?? null,
+      isWritable: false,
+    },
+    lpPrincipal: { value: input.lpPrincipal ?? null, isWritable: true },
+    lpAuthority: { value: input.lpAuthority ?? null, isWritable: false },
+    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
+
+  // Resolve default values.
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
@@ -210,6 +365,12 @@ export function getEnterRoundEmergencyInstruction<
       getAccountMeta(accounts.admin),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.round),
+      getAccountMeta(accounts.paymentMint),
+      getAccountMeta(accounts.prizeVault),
+      getAccountMeta(accounts.prizeVaultAuthority),
+      getAccountMeta(accounts.lpPrincipal),
+      getAccountMeta(accounts.lpAuthority),
+      getAccountMeta(accounts.tokenProgram),
     ],
     data: getEnterRoundEmergencyInstructionDataEncoder().encode({}),
     programAddress,
@@ -217,7 +378,13 @@ export function getEnterRoundEmergencyInstruction<
     TProgramAddress,
     TAccountAdmin,
     TAccountConfig,
-    TAccountRound
+    TAccountRound,
+    TAccountPaymentMint,
+    TAccountPrizeVault,
+    TAccountPrizeVaultAuthority,
+    TAccountLpPrincipal,
+    TAccountLpAuthority,
+    TAccountTokenProgram
   >);
 }
 
@@ -230,6 +397,12 @@ export type ParsedEnterRoundEmergencyInstruction<
     admin: TAccountMetas[0];
     config: TAccountMetas[1];
     round: TAccountMetas[2];
+    paymentMint: TAccountMetas[3];
+    prizeVault: TAccountMetas[4];
+    prizeVaultAuthority: TAccountMetas[5];
+    lpPrincipal: TAccountMetas[6];
+    lpAuthority: TAccountMetas[7];
+    tokenProgram: TAccountMetas[8];
   };
   data: EnterRoundEmergencyInstructionData;
 };
@@ -242,7 +415,7 @@ export function parseEnterRoundEmergencyInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedEnterRoundEmergencyInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+  if (instruction.accounts.length < 9) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -258,6 +431,12 @@ export function parseEnterRoundEmergencyInstruction<
       admin: getNextAccount(),
       config: getNextAccount(),
       round: getNextAccount(),
+      paymentMint: getNextAccount(),
+      prizeVault: getNextAccount(),
+      prizeVaultAuthority: getNextAccount(),
+      lpPrincipal: getNextAccount(),
+      lpAuthority: getNextAccount(),
+      tokenProgram: getNextAccount(),
     },
     data: getEnterRoundEmergencyInstructionDataDecoder().decode(
       instruction.data,

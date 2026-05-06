@@ -19,6 +19,9 @@ impl LpVault {
 
 #[account]
 pub struct LpPosition {
+    /// Set to `true` the first time this PDA is written. Defends `init_if_needed`
+    /// from accidental reinitialization independent of the owner-pubkey check.
+    pub initialized: bool,
     pub owner: Pubkey,
     pub shares: u128,
     pub last_deposit_at: i64,
@@ -29,7 +32,7 @@ pub struct LpPosition {
 }
 
 impl LpPosition {
-    pub const LEN: usize = 32 + 16 + 8 + 16 + 8 + 8 + 1 + 16;
+    pub const LEN: usize = 1 + 32 + 16 + 8 + 16 + 8 + 8 + 1 + 16;
 
     pub fn has_pending_withdrawal(&self) -> bool {
         self.pending_withdraw_shares > 0

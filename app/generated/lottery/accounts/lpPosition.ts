@@ -17,6 +17,8 @@ import {
   fixEncoderSize,
   getAddressDecoder,
   getAddressEncoder,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getI64Decoder,
@@ -53,6 +55,11 @@ export function getLpPositionDiscriminatorBytes() {
 
 export type LpPosition = {
   discriminator: ReadonlyUint8Array;
+  /**
+   * Set to `true` the first time this PDA is written. Defends `init_if_needed`
+   * from accidental reinitialization independent of the owner-pubkey check.
+   */
+  initialized: boolean;
   owner: Address;
   shares: bigint;
   lastDepositAt: bigint;
@@ -63,6 +70,11 @@ export type LpPosition = {
 };
 
 export type LpPositionArgs = {
+  /**
+   * Set to `true` the first time this PDA is written. Defends `init_if_needed`
+   * from accidental reinitialization independent of the owner-pubkey check.
+   */
+  initialized: boolean;
   owner: Address;
   shares: number | bigint;
   lastDepositAt: number | bigint;
@@ -77,6 +89,7 @@ export function getLpPositionEncoder(): FixedSizeEncoder<LpPositionArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["initialized", getBooleanEncoder()],
       ["owner", getAddressEncoder()],
       ["shares", getU128Encoder()],
       ["lastDepositAt", getI64Encoder()],
@@ -93,6 +106,7 @@ export function getLpPositionEncoder(): FixedSizeEncoder<LpPositionArgs> {
 export function getLpPositionDecoder(): FixedSizeDecoder<LpPosition> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["initialized", getBooleanDecoder()],
     ["owner", getAddressDecoder()],
     ["shares", getU128Decoder()],
     ["lastDepositAt", getI64Decoder()],
@@ -165,5 +179,5 @@ export async function fetchAllMaybeLpPosition(
 }
 
 export function getLpPositionSize(): number {
-  return 97;
+  return 98;
 }

@@ -10,7 +10,7 @@ use crate::constants::{
 };
 use crate::errors::LotteryError;
 use crate::events::{SubscriptionCanceled, SubscriptionCreated, SubscriptionProcessed};
-use crate::instructions::ticket::compute_per_ticket_fees;
+use crate::instructions::ticket::{compute_per_ticket_fees, upsert_pick_counter};
 use crate::math::validate_pick;
 use crate::state::buyer_entry::BuyerEntry;
 use crate::state::config::Config;
@@ -37,12 +37,12 @@ pub struct SubscribeDaily<'info> {
     )]
     pub subscription: Box<Account<'info, Subscription>>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Box<Account<'info, Mint>>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = owner,
     )]
     pub owner_token_account: Box<Account<'info, TokenAccount>>,
@@ -50,9 +50,9 @@ pub struct SubscribeDaily<'info> {
     #[account(
         init_if_needed,
         payer = owner,
-        seeds = [SUB_ESCROW_SEED, owner.key().as_ref(), usdc_mint.key().as_ref()],
+        seeds = [SUB_ESCROW_SEED, owner.key().as_ref(), payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = subscription,
     )]
     pub sub_escrow: Box<Account<'info, TokenAccount>>,
@@ -103,7 +103,7 @@ pub fn subscribe_daily(
         );
     }
 
-    if ctx.accounts.subscription.owner != Pubkey::default() {
+    if ctx.accounts.subscription.initialized {
         require_keys_eq!(
             ctx.accounts.subscription.owner,
             ctx.accounts.owner.key(),
@@ -132,19 +132,20 @@ pub fn subscribe_daily(
             ctx.accounts.token_program.to_account_info(),
             TransferChecked {
                 from: ctx.accounts.owner_token_account.to_account_info(),
-                mint: ctx.accounts.usdc_mint.to_account_info(),
+                mint: ctx.accounts.payment_mint.to_account_info(),
                 to: ctx.accounts.sub_escrow.to_account_info(),
                 authority: ctx.accounts.owner.to_account_info(),
             },
         ),
         total_amount,
-        ctx.accounts.usdc_mint.decimals,
+        ctx.accounts.config.payment_decimals,
     )?;
 
     let now = Clock::get()?.unix_timestamp;
     let expires_at = now.saturating_add((days as i64).saturating_mul(24 * 60 * 60));
 
     let subscription = &mut ctx.accounts.subscription;
+    subscription.initialized = true;
     subscription.owner = ctx.accounts.owner.key();
     subscription.daily_ticket_count = daily_ticket_count;
     subscription.agreed_price = agreed_price;
@@ -194,23 +195,23 @@ pub struct ProcessSubscription<'info> {
     )]
     pub round: Box<Account<'info, Round>>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Box<Account<'info, Mint>>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
-        seeds = [SUB_ESCROW_SEED, owner.key().as_ref(), usdc_mint.key().as_ref()],
+        seeds = [SUB_ESCROW_SEED, owner.key().as_ref(), payment_mint.key().as_ref()],
         bump = subscription.escrow_bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = subscription,
     )]
     pub sub_escrow: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
-        seeds = [PRIZE_VAULT_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [PRIZE_VAULT_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = prize_vault_authority,
     )]
     pub prize_vault: Box<Account<'info, TokenAccount>>,
@@ -232,9 +233,9 @@ pub struct ProcessSubscription<'info> {
 
     #[account(
         mut,
-        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = lp_authority,
     )]
     pub lp_principal: Box<Account<'info, TokenAccount>>,
@@ -394,7 +395,8 @@ pub fn process_subscription<'info>(
         .ok_or(error!(LotteryError::MathOverflow))?;
 
     let buyer_entry = &mut ctx.accounts.buyer_entry;
-    if buyer_entry.round_id == 0 && buyer_entry.ticket_count == 0 {
+    if !buyer_entry.initialized {
+        buyer_entry.initialized = true;
         buyer_entry.round_id = round.round_id;
         buyer_entry.buyer = subscription.owner;
         buyer_entry.bump = ctx.bumps.buyer_entry;
@@ -404,14 +406,25 @@ pub fn process_subscription<'info>(
             round.round_id,
             LotteryError::RoundIdMismatch
         );
+        require_keys_eq!(
+            buyer_entry.buyer,
+            subscription.owner,
+            LotteryError::Unauthorized
+        );
     }
     let first_index = buyer_entry.ticket_count;
 
+    // Same layout as `buy_tickets`: first N entries are ticket PDAs, next N are
+    // PickCounter PDAs (one per pick — may repeat for duplicate picks).
+    let pick_count = picks.len();
     require_eq!(
         ctx.remaining_accounts.len(),
-        picks.len(),
+        pick_count
+            .checked_mul(2)
+            .ok_or(error!(LotteryError::MathOverflow))?,
         LotteryError::InvalidBatchSize
     );
+    let (ticket_accounts, pick_counter_accounts) = ctx.remaining_accounts.split_at(pick_count);
 
     let rent = Rent::get()?;
     let space = 8 + Ticket::LEN;
@@ -420,7 +433,7 @@ pub fn process_subscription<'info>(
     let owner_key = subscription.owner;
     let program_id = ctx.program_id;
 
-    for (i, ticket_account) in ctx.remaining_accounts.iter().enumerate() {
+    for (i, ticket_account) in ticket_accounts.iter().enumerate() {
         let ticket_index = first_index
             .checked_add(i as u64)
             .ok_or(error!(LotteryError::MathOverflow))?;
@@ -479,6 +492,20 @@ pub fn process_subscription<'info>(
         ticket.try_serialize(&mut writer)?;
     }
 
+    // Upsert PickCounter PDAs. Keeper pays the rent for fresh counters since this is
+    // the subscription path (buyer paid up-front via escrow); rent on counter creation
+    // is operationally absorbed by the keeper, same as ticket account creation.
+    for (i, pick_counter_account) in pick_counter_accounts.iter().enumerate() {
+        upsert_pick_counter(
+            pick_counter_account,
+            &picks[i],
+            round.round_id,
+            &ctx.accounts.keeper.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            program_id,
+        )?;
+    }
+
     buyer_entry.ticket_count = first_index
         .checked_add(count)
         .ok_or(error!(LotteryError::MathOverflow))?;
@@ -496,14 +523,14 @@ pub fn process_subscription<'info>(
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.sub_escrow.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.lp_principal.to_account_info(),
                     authority: subscription.to_account_info(),
                 },
                 signers,
             ),
             lp_edge_total,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
         let lp_vault = &mut ctx.accounts.lp_vault;
         lp_vault.total_assets = lp_vault
@@ -525,14 +552,14 @@ pub fn process_subscription<'info>(
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.sub_escrow.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.prize_vault.to_account_info(),
                     authority: subscription.to_account_info(),
                 },
                 signers,
             ),
             prize_vault_amount,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
     }
 
@@ -612,21 +639,21 @@ pub struct CancelSubscription<'info> {
     )]
     pub subscription: Box<Account<'info, Subscription>>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Box<Account<'info, Mint>>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
-        seeds = [SUB_ESCROW_SEED, owner.key().as_ref(), usdc_mint.key().as_ref()],
+        seeds = [SUB_ESCROW_SEED, owner.key().as_ref(), payment_mint.key().as_ref()],
         bump = subscription.escrow_bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = subscription,
     )]
     pub sub_escrow: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = owner,
     )]
     pub owner_token_account: Box<Account<'info, TokenAccount>>,
@@ -647,14 +674,14 @@ pub fn cancel_subscription(ctx: Context<CancelSubscription>) -> Result<()> {
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.sub_escrow.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    mint: ctx.accounts.payment_mint.to_account_info(),
                     to: ctx.accounts.owner_token_account.to_account_info(),
                     authority: subscription.to_account_info(),
                 },
                 signers,
             ),
             refund,
-            ctx.accounts.usdc_mint.decimals,
+            ctx.accounts.config.payment_decimals,
         )?;
     }
 

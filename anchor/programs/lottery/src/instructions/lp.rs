@@ -36,21 +36,21 @@ pub struct LpDeposit<'info> {
     )]
     pub position: Account<'info, LpPosition>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Account<'info, Mint>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Account<'info, Mint>,
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = owner,
     )]
     pub owner_token_account: Account<'info, TokenAccount>,
 
     #[account(
         mut,
-        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = lp_authority,
     )]
     pub lp_principal: Account<'info, TokenAccount>,
@@ -95,17 +95,18 @@ pub fn lp_deposit(ctx: Context<LpDeposit>, amount: u64) -> Result<()> {
             ctx.accounts.token_program.to_account_info(),
             TransferChecked {
                 from: ctx.accounts.owner_token_account.to_account_info(),
-                mint: ctx.accounts.usdc_mint.to_account_info(),
+                mint: ctx.accounts.payment_mint.to_account_info(),
                 to: ctx.accounts.lp_principal.to_account_info(),
                 authority: ctx.accounts.owner.to_account_info(),
             },
         ),
         amount,
-        ctx.accounts.usdc_mint.decimals,
+        ctx.accounts.config.payment_decimals,
     )?;
 
     let position = &mut ctx.accounts.position;
-    if position.owner == Pubkey::default() {
+    if !position.initialized {
+        position.initialized = true;
         position.owner = ctx.accounts.owner.key();
         position.bump = ctx.bumps.position;
     } else {
@@ -128,11 +129,10 @@ pub fn lp_deposit(ctx: Context<LpDeposit>, amount: u64) -> Result<()> {
         .ok_or(error!(LotteryError::MathOverflow))?;
     lp_vault.total_assets = new_total;
 
-    let shares_u64 = u64::try_from(shares).unwrap_or(u64::MAX);
     emit!(LpDeposited {
         owner: ctx.accounts.owner.key(),
         amount,
-        shares_minted: shares_u64,
+        shares_minted: shares,
     });
     Ok(())
 }
@@ -171,6 +171,15 @@ pub fn lp_initiate_withdraw(ctx: Context<LpInitiateWithdraw>, shares: u64) -> Re
         !ctx.accounts.config.emergency_mode,
         LotteryError::EmergencyMode
     );
+    // The cooldown is "wait for the round you initiated in to terminate." If no round
+    // exists yet, there is no round to wait for — `lp_finalize_withdraw` would skip its
+    // terminal-state guard (which is gated by `pending_withdraw_round > 0`) and let the
+    // LP exit instantly. Force at least one round to have started so the cooldown is
+    // always meaningful.
+    require!(
+        ctx.accounts.round_counter.current_round_id > 0,
+        LotteryError::LpWithdrawalNotReady
+    );
     let position = &mut ctx.accounts.position;
     require!(
         !position.has_pending_withdrawal(),
@@ -196,7 +205,7 @@ pub fn lp_initiate_withdraw(ctx: Context<LpInitiateWithdraw>, shares: u64) -> Re
 
     emit!(LpWithdrawalInitiated {
         owner: ctx.accounts.owner.key(),
-        shares,
+        shares: shares_u128,
         round_id: position.pending_withdraw_round,
     });
     Ok(())
@@ -238,14 +247,14 @@ pub struct LpFinalizeWithdraw<'info> {
     )]
     pub position: Account<'info, LpPosition>,
 
-    #[account(address = config.usdc_mint @ LotteryError::InvalidTokenMint)]
-    pub usdc_mint: Account<'info, Mint>,
+    #[account(address = config.payment_mint @ LotteryError::InvalidTokenMint)]
+    pub payment_mint: Account<'info, Mint>,
 
     #[account(
         mut,
-        seeds = [LP_PRINCIPAL_TOKEN_SEED, usdc_mint.key().as_ref()],
+        seeds = [LP_PRINCIPAL_TOKEN_SEED, payment_mint.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = lp_authority,
     )]
     pub lp_principal: Account<'info, TokenAccount>,
@@ -256,7 +265,7 @@ pub struct LpFinalizeWithdraw<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = payment_mint,
         token::authority = owner,
     )]
     pub owner_token_account: Account<'info, TokenAccount>,
@@ -302,14 +311,14 @@ pub fn lp_finalize_withdraw(ctx: Context<LpFinalizeWithdraw>) -> Result<()> {
             ctx.accounts.token_program.to_account_info(),
             TransferChecked {
                 from: ctx.accounts.lp_principal.to_account_info(),
-                mint: ctx.accounts.usdc_mint.to_account_info(),
+                mint: ctx.accounts.payment_mint.to_account_info(),
                 to: ctx.accounts.owner_token_account.to_account_info(),
                 authority: ctx.accounts.lp_authority.to_account_info(),
             },
             signers,
         ),
         assets,
-        ctx.accounts.usdc_mint.decimals,
+        ctx.accounts.config.payment_decimals,
     )?;
 
     lp_vault.total_shares = lp_vault
@@ -329,10 +338,9 @@ pub fn lp_finalize_withdraw(ctx: Context<LpFinalizeWithdraw>) -> Result<()> {
     position.pending_withdraw_round = 0;
     position.pending_withdraw_initiated_at = 0;
 
-    let shares_u64 = u64::try_from(shares_to_burn).unwrap_or(u64::MAX);
     emit!(LpWithdrawalFinalized {
         owner: ctx.accounts.owner.key(),
-        shares: shares_u64,
+        shares: shares_to_burn,
         amount: assets,
     });
     Ok(())

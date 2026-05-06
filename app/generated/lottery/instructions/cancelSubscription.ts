@@ -53,7 +53,7 @@ export type CancelSubscriptionInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountSubscription extends string | AccountMeta<string> = string,
-  TAccountUsdcMint extends string | AccountMeta<string> = string,
+  TAccountPaymentMint extends string | AccountMeta<string> = string,
   TAccountSubEscrow extends string | AccountMeta<string> = string,
   TAccountOwnerTokenAccount extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
@@ -73,9 +73,9 @@ export type CancelSubscriptionInstruction<
       TAccountSubscription extends string
         ? WritableAccount<TAccountSubscription>
         : TAccountSubscription,
-      TAccountUsdcMint extends string
-        ? ReadonlyAccount<TAccountUsdcMint>
-        : TAccountUsdcMint,
+      TAccountPaymentMint extends string
+        ? ReadonlyAccount<TAccountPaymentMint>
+        : TAccountPaymentMint,
       TAccountSubEscrow extends string
         ? WritableAccount<TAccountSubEscrow>
         : TAccountSubEscrow,
@@ -122,7 +122,7 @@ export type CancelSubscriptionAsyncInput<
   TAccountOwner extends string = string,
   TAccountConfig extends string = string,
   TAccountSubscription extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountSubEscrow extends string = string,
   TAccountOwnerTokenAccount extends string = string,
   TAccountTokenProgram extends string = string,
@@ -130,7 +130,7 @@ export type CancelSubscriptionAsyncInput<
   owner: TransactionSigner<TAccountOwner>;
   config?: Address<TAccountConfig>;
   subscription?: Address<TAccountSubscription>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   subEscrow?: Address<TAccountSubEscrow>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
@@ -140,7 +140,7 @@ export async function getCancelSubscriptionInstructionAsync<
   TAccountOwner extends string,
   TAccountConfig extends string,
   TAccountSubscription extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountSubEscrow extends string,
   TAccountOwnerTokenAccount extends string,
   TAccountTokenProgram extends string,
@@ -150,7 +150,7 @@ export async function getCancelSubscriptionInstructionAsync<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountOwnerTokenAccount,
     TAccountTokenProgram
@@ -162,7 +162,7 @@ export async function getCancelSubscriptionInstructionAsync<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountOwnerTokenAccount,
     TAccountTokenProgram
@@ -176,7 +176,7 @@ export async function getCancelSubscriptionInstructionAsync<
     owner: { value: input.owner ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     subscription: { value: input.subscription ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     subEscrow: { value: input.subEscrow ?? null, isWritable: true },
     ownerTokenAccount: {
       value: input.ownerTokenAccount ?? null,
@@ -201,7 +201,7 @@ export async function getCancelSubscriptionInstructionAsync<
   if (!accounts.subEscrow.value) {
     accounts.subEscrow.value = await findSubEscrowPda({
       owner: expectAddress(accounts.owner.value),
-      usdcMint: expectAddress(accounts.usdcMint.value),
+      paymentMint: expectAddress(accounts.paymentMint.value),
     });
   }
   if (!accounts.tokenProgram.value) {
@@ -215,7 +215,7 @@ export async function getCancelSubscriptionInstructionAsync<
       getAccountMeta(accounts.owner),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.subscription),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.subEscrow),
       getAccountMeta(accounts.ownerTokenAccount),
       getAccountMeta(accounts.tokenProgram),
@@ -227,7 +227,7 @@ export async function getCancelSubscriptionInstructionAsync<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountOwnerTokenAccount,
     TAccountTokenProgram
@@ -238,7 +238,7 @@ export type CancelSubscriptionInput<
   TAccountOwner extends string = string,
   TAccountConfig extends string = string,
   TAccountSubscription extends string = string,
-  TAccountUsdcMint extends string = string,
+  TAccountPaymentMint extends string = string,
   TAccountSubEscrow extends string = string,
   TAccountOwnerTokenAccount extends string = string,
   TAccountTokenProgram extends string = string,
@@ -246,7 +246,7 @@ export type CancelSubscriptionInput<
   owner: TransactionSigner<TAccountOwner>;
   config: Address<TAccountConfig>;
   subscription: Address<TAccountSubscription>;
-  usdcMint: Address<TAccountUsdcMint>;
+  paymentMint: Address<TAccountPaymentMint>;
   subEscrow: Address<TAccountSubEscrow>;
   ownerTokenAccount: Address<TAccountOwnerTokenAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
@@ -256,7 +256,7 @@ export function getCancelSubscriptionInstruction<
   TAccountOwner extends string,
   TAccountConfig extends string,
   TAccountSubscription extends string,
-  TAccountUsdcMint extends string,
+  TAccountPaymentMint extends string,
   TAccountSubEscrow extends string,
   TAccountOwnerTokenAccount extends string,
   TAccountTokenProgram extends string,
@@ -266,7 +266,7 @@ export function getCancelSubscriptionInstruction<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountOwnerTokenAccount,
     TAccountTokenProgram
@@ -277,7 +277,7 @@ export function getCancelSubscriptionInstruction<
   TAccountOwner,
   TAccountConfig,
   TAccountSubscription,
-  TAccountUsdcMint,
+  TAccountPaymentMint,
   TAccountSubEscrow,
   TAccountOwnerTokenAccount,
   TAccountTokenProgram
@@ -290,7 +290,7 @@ export function getCancelSubscriptionInstruction<
     owner: { value: input.owner ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     subscription: { value: input.subscription ?? null, isWritable: true },
-    usdcMint: { value: input.usdcMint ?? null, isWritable: false },
+    paymentMint: { value: input.paymentMint ?? null, isWritable: false },
     subEscrow: { value: input.subEscrow ?? null, isWritable: true },
     ownerTokenAccount: {
       value: input.ownerTokenAccount ?? null,
@@ -315,7 +315,7 @@ export function getCancelSubscriptionInstruction<
       getAccountMeta(accounts.owner),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.subscription),
-      getAccountMeta(accounts.usdcMint),
+      getAccountMeta(accounts.paymentMint),
       getAccountMeta(accounts.subEscrow),
       getAccountMeta(accounts.ownerTokenAccount),
       getAccountMeta(accounts.tokenProgram),
@@ -327,7 +327,7 @@ export function getCancelSubscriptionInstruction<
     TAccountOwner,
     TAccountConfig,
     TAccountSubscription,
-    TAccountUsdcMint,
+    TAccountPaymentMint,
     TAccountSubEscrow,
     TAccountOwnerTokenAccount,
     TAccountTokenProgram
@@ -343,7 +343,7 @@ export type ParsedCancelSubscriptionInstruction<
     owner: TAccountMetas[0];
     config: TAccountMetas[1];
     subscription: TAccountMetas[2];
-    usdcMint: TAccountMetas[3];
+    paymentMint: TAccountMetas[3];
     subEscrow: TAccountMetas[4];
     ownerTokenAccount: TAccountMetas[5];
     tokenProgram: TAccountMetas[6];
@@ -375,7 +375,7 @@ export function parseCancelSubscriptionInstruction<
       owner: getNextAccount(),
       config: getNextAccount(),
       subscription: getNextAccount(),
-      usdcMint: getNextAccount(),
+      paymentMint: getNextAccount(),
       subEscrow: getNextAccount(),
       ownerTokenAccount: getNextAccount(),
       tokenProgram: getNextAccount(),
