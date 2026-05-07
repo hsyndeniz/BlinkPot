@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import useSWR from "swr";
+import type { Address } from "@solana/kit";
 import {
   fetchAllMaybeRound,
   fetchAllMaybeTicket,
@@ -13,19 +14,7 @@ import {
   fetchMaybeRound,
   fetchMaybeRoundCounter,
   fetchMaybeSubscription,
-  getTicketDecoder,
-  getTicketDiscriminatorBytes,
-  type BuyerEntry,
-  type Config,
-  type LpPosition,
-  type LpVault,
-  type Referral,
-  type Round,
-  type RoundCounter,
-  type Subscription,
-  type Ticket,
 } from "../../generated/lottery";
-import type { Address, MaybeAccount } from "@solana/kit";
 import { useCluster } from "../../components/cluster-context";
 import { useSolanaClient } from "../solana-client-context";
 import {
@@ -38,174 +27,45 @@ import {
   findRoundPda,
   findSubscriptionPda,
   findTicketPda,
-  LOTTERY_PROGRAM_ID,
   pdaAddress,
-  u64Le,
 } from "./addresses";
+import { useLotteryAccount, exists } from "./_account-query";
 
-type Maybe<T extends object> = MaybeAccount<T> | undefined;
-type Existing<T extends object> = MaybeAccount<T> & {
-  readonly exists: true;
-  readonly data: T;
-};
-
-function exists<T extends object>(account: Maybe<T>): account is Existing<T> {
-  return !!account?.exists;
-}
-
-function bytesToBase64(bytes: ArrayLike<number>): string {
-  if (typeof btoa === "function") {
-    let binary = "";
-    for (let i = 0; i < bytes.length; i += 1) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-  return Buffer.from(Array.from(bytes)).toString("base64");
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  if (typeof atob === "function") {
-    const binary = atob(value);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
-  }
-  return new Uint8Array(Buffer.from(value, "base64"));
-}
-
-function useAccountSubscription(
-  address: Address | undefined,
-  revalidate: () => void
-) {
-  const client = useSolanaClient();
-
-  useEffect(() => {
-    if (!address) return;
-    const abortController = new AbortController();
-
-    const subscribe = async () => {
-      try {
-        const notifications = await client.rpcSubscriptions
-          .accountNotifications(address, { commitment: "confirmed" })
-          .subscribe({ abortSignal: abortController.signal });
-
-        for await (const notification of notifications) {
-          void notification;
-          revalidate();
-        }
-      } catch {
-        // SWR focus and explicit post-transaction invalidation remain as fallback.
-      }
-    };
-
-    void subscribe();
-    return () => abortController.abort();
-  }, [address, client, revalidate]);
-}
+// ─── single-account hooks ──────────────────────────────────────────────────
+// All of these wrap the same SWR + WebSocket subscription pattern via
+// `useLotteryAccount`. Each just wires its own PDA derivation, codama fetcher,
+// and renames `data` → a domain-specific property name for backwards-compat
+// with existing call sites.
 
 export function useConfig() {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-
-  const address = useSWR(
-    ["lottery", "pda", "config"] as const,
-    async () => pdaAddress(await findConfigPda()),
-    { revalidateOnFocus: false }
-  );
-
-  const result = useSWR(
-    address.data
-      ? (["lottery", "account", "config", cluster, address.data] as const)
-      : null,
-    async ([, , , , configAddress]) =>
-      fetchMaybeConfig(client.rpc, configAddress, { commitment: "confirmed" }),
-    { revalidateOnFocus: true }
-  );
-
-  useAccountSubscription(address.data, () => result.mutate());
-
-  return {
-    ...result,
-    address: address.data,
-    account: result.data as MaybeAccount<Config> | undefined,
-    config: exists(result.data) ? result.data.data : undefined,
-    exists: !!result.data?.exists,
-  };
+  const out = useLotteryAccount({
+    tag: "config",
+    args: [],
+    derive: () => findConfigPda(),
+    fetch: fetchMaybeConfig,
+  });
+  return { ...out, config: out.data };
 }
 
 export function useRoundCounter() {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-
-  const address = useSWR(
-    ["lottery", "pda", "roundCounter"] as const,
-    async () => pdaAddress(await findRoundCounterPda()),
-    { revalidateOnFocus: false }
-  );
-
-  const result = useSWR(
-    address.data
-      ? (["lottery", "account", "roundCounter", cluster, address.data] as const)
-      : null,
-    async ([, , , , counterAddress]) =>
-      fetchMaybeRoundCounter(client.rpc, counterAddress, {
-        commitment: "confirmed",
-      }),
-    { revalidateOnFocus: true }
-  );
-
-  useAccountSubscription(address.data, () => result.mutate());
-
-  return {
-    ...result,
-    address: address.data,
-    account: result.data as MaybeAccount<RoundCounter> | undefined,
-    counter: exists(result.data) ? result.data.data : undefined,
-    exists: !!result.data?.exists,
-  };
+  const out = useLotteryAccount({
+    tag: "roundCounter",
+    args: [],
+    derive: () => findRoundCounterPda(),
+    fetch: fetchMaybeRoundCounter,
+  });
+  return { ...out, counter: out.data };
 }
 
 export function useRound(roundId?: bigint | number) {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-  const normalized = roundId == null ? undefined : BigInt(roundId);
-
-  const address = useSWR(
-    normalized != null
-      ? (["lottery", "pda", "round", normalized.toString()] as const)
-      : null,
-    async ([, , , id]) => pdaAddress(await findRoundPda(BigInt(id))),
-    { revalidateOnFocus: false }
-  );
-
-  const result = useSWR(
-    address.data
-      ? ([
-          "lottery",
-          "account",
-          "round",
-          cluster,
-          normalized?.toString(),
-          address.data,
-        ] as const)
-      : null,
-    async ([, , , , , roundAddress]) =>
-      fetchMaybeRound(client.rpc, roundAddress, { commitment: "confirmed" }),
-    { revalidateOnFocus: true }
-  );
-
-  useAccountSubscription(address.data, () => result.mutate());
-
-  return {
-    ...result,
-    address: address.data,
-    account: result.data as MaybeAccount<Round> | undefined,
-    round: exists(result.data) ? result.data.data : undefined,
-    exists: !!result.data?.exists,
-  };
+  const id = roundId == null ? undefined : BigInt(roundId);
+  const out = useLotteryAccount({
+    tag: "round",
+    args: [id?.toString()],
+    derive: () => findRoundPda(id as bigint),
+    fetch: fetchMaybeRound,
+  });
+  return { ...out, round: out.data };
 }
 
 export function useCurrentRound() {
@@ -214,13 +74,67 @@ export function useCurrentRound() {
   const round = useRound(
     currentRoundId && currentRoundId > 0n ? currentRoundId : undefined
   );
-
-  return {
-    ...round,
-    counter,
-    currentRoundId,
-  };
+  return { ...round, counter, currentRoundId };
 }
+
+export function useLpVault() {
+  const out = useLotteryAccount({
+    tag: "lpVault",
+    args: [],
+    derive: () => findLpVaultPda(),
+    fetch: fetchMaybeLpVault,
+  });
+  return { ...out, lpVault: out.data };
+}
+
+export function useLpPosition(owner?: Address) {
+  const out = useLotteryAccount({
+    tag: "lpPosition",
+    args: [owner],
+    derive: () => findPositionPda({ owner: owner as Address }),
+    fetch: fetchMaybeLpPosition,
+  });
+  return { ...out, position: out.data };
+}
+
+export function useReferral(owner?: Address) {
+  const out = useLotteryAccount({
+    tag: "referral",
+    args: [owner],
+    derive: () => findReferralPda({ referrer: owner as Address }),
+    fetch: fetchMaybeReferral,
+  });
+  return { ...out, referral: out.data };
+}
+
+export function useSubscription(owner?: Address) {
+  const out = useLotteryAccount({
+    tag: "subscription",
+    args: [owner],
+    derive: () => findSubscriptionPda({ owner: owner as Address }),
+    fetch: fetchMaybeSubscription,
+  });
+  return { ...out, subscription: out.data };
+}
+
+export function useBuyerEntry(roundId?: bigint | number, owner?: Address) {
+  const id = roundId == null ? undefined : BigInt(roundId);
+  const out = useLotteryAccount({
+    tag: "buyerEntry",
+    args: [id?.toString(), owner],
+    derive: () =>
+      findBuyerEntryPda({
+        roundId: id as bigint,
+        buyer: owner as Address,
+      }),
+    fetch: fetchMaybeBuyerEntry,
+  });
+  return { ...out, buyerEntry: out.data };
+}
+
+// ─── batch / range queries ─────────────────────────────────────────────────
+
+const ROUNDS_PAGE_DEFAULT = 5n;
 
 export function useRounds(range: { from?: bigint; to?: bigint } = {}) {
   const { cluster } = useCluster();
@@ -230,15 +144,10 @@ export function useRounds(range: { from?: bigint; to?: bigint } = {}) {
   const ids = useMemo(() => {
     const current = counter.counter?.currentRoundId ?? 0n;
     const to = range.to ?? current;
-    const from = range.from ?? (to > 5n ? to - 5n : 1n);
+    const from =
+      range.from ?? (to > ROUNDS_PAGE_DEFAULT ? to - ROUNDS_PAGE_DEFAULT : 1n);
     const out: bigint[] = [];
     for (let id = from; id <= to && id > 0n; id += 1n) out.push(id);
-    console.log("🔄 useRounds calculated IDs:", {
-      current: current.toString(),
-      from: from.toString(),
-      to: to.toString(),
-      ids: out.map((id) => id.toString()),
-    });
     return out.reverse();
   }, [counter.counter?.currentRoundId, range.from, range.to]);
 
@@ -250,17 +159,9 @@ export function useRounds(range: { from?: bigint; to?: bigint } = {}) {
       const addresses = await Promise.all(
         ids.map((id) => findRoundPda(id).then(pdaAddress))
       );
-      const rounds = await fetchAllMaybeRound(client.rpc, addresses, {
+      return fetchAllMaybeRound(client.rpc, addresses, {
         commitment: "confirmed",
       });
-      console.log("🔄 useRounds fetched:", {
-        total: rounds.length,
-        existing: rounds.filter((r) => r.exists).length,
-        roundIds: rounds
-          .filter((r) => r.exists)
-          .map((r) => r.data.roundId.toString()),
-      });
-      return rounds;
     },
     { revalidateOnFocus: true }
   );
@@ -272,277 +173,45 @@ export function useRounds(range: { from?: bigint; to?: bigint } = {}) {
   };
 }
 
-export function useLpVault() {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-
-  const address = useSWR(
-    ["lottery", "pda", "lpVault"] as const,
-    async () => pdaAddress(await findLpVaultPda()),
-    { revalidateOnFocus: false }
-  );
-
-  const result = useSWR(
-    address.data
-      ? (["lottery", "account", "lpVault", cluster, address.data] as const)
-      : null,
-    async ([, , , , lpVaultAddress]) =>
-      fetchMaybeLpVault(client.rpc, lpVaultAddress, {
-        commitment: "confirmed",
-      }),
-    { revalidateOnFocus: true }
-  );
-
-  useAccountSubscription(address.data, () => result.mutate());
-
-  return {
-    ...result,
-    address: address.data,
-    account: result.data as MaybeAccount<LpVault> | undefined,
-    lpVault: exists(result.data) ? result.data.data : undefined,
-    exists: !!result.data?.exists,
-  };
-}
-
-export function useLpPosition(owner?: Address) {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-
-  const address = useSWR(
-    owner ? (["lottery", "pda", "lpPosition", owner] as const) : null,
-    async ([, , , positionOwner]) =>
-      pdaAddress(await findPositionPda({ owner: positionOwner })),
-    { revalidateOnFocus: false }
-  );
-
-  const result = useSWR(
-    address.data
-      ? ([
-          "lottery",
-          "account",
-          "lpPosition",
-          cluster,
-          owner,
-          address.data,
-        ] as const)
-      : null,
-    async ([, , , , , positionAddress]) =>
-      fetchMaybeLpPosition(client.rpc, positionAddress, {
-        commitment: "confirmed",
-      }),
-    { revalidateOnFocus: true }
-  );
-
-  useAccountSubscription(address.data, () => result.mutate());
-
-  return {
-    ...result,
-    address: address.data,
-    account: result.data as MaybeAccount<LpPosition> | undefined,
-    position: exists(result.data) ? result.data.data : undefined,
-    exists: !!result.data?.exists,
-  };
-}
-
-export function useReferral(owner?: Address) {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-
-  const address = useSWR(
-    owner ? (["lottery", "pda", "referral", owner] as const) : null,
-    async ([, , , referralOwner]) =>
-      pdaAddress(await findReferralPda({ referrer: referralOwner })),
-    { revalidateOnFocus: false }
-  );
-
-  const result = useSWR(
-    address.data
-      ? ([
-          "lottery",
-          "account",
-          "referral",
-          cluster,
-          owner,
-          address.data,
-        ] as const)
-      : null,
-    async ([, , , , , referralAddress]) =>
-      fetchMaybeReferral(client.rpc, referralAddress, {
-        commitment: "confirmed",
-      }),
-    { revalidateOnFocus: true }
-  );
-
-  useAccountSubscription(address.data, () => result.mutate());
-
-  return {
-    ...result,
-    address: address.data,
-    account: result.data as MaybeAccount<Referral> | undefined,
-    referral: exists(result.data) ? result.data.data : undefined,
-    exists: !!result.data?.exists,
-  };
-}
-
-export function useSubscription(owner?: Address) {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-
-  const address = useSWR(
-    owner ? (["lottery", "pda", "subscription", owner] as const) : null,
-    async ([, , , subOwner]) =>
-      pdaAddress(await findSubscriptionPda({ owner: subOwner })),
-    { revalidateOnFocus: false }
-  );
-
-  const result = useSWR(
-    address.data
-      ? ([
-          "lottery",
-          "account",
-          "subscription",
-          cluster,
-          owner,
-          address.data,
-        ] as const)
-      : null,
-    async ([, , , , , subscriptionAddress]) =>
-      fetchMaybeSubscription(client.rpc, subscriptionAddress, {
-        commitment: "confirmed",
-      }),
-    { revalidateOnFocus: true }
-  );
-
-  useAccountSubscription(address.data, () => result.mutate());
-
-  return {
-    ...result,
-    address: address.data,
-    account: result.data as MaybeAccount<Subscription> | undefined,
-    subscription: exists(result.data) ? result.data.data : undefined,
-    exists: !!result.data?.exists,
-  };
-}
-
-export function useBuyerEntry(roundId?: bigint | number, owner?: Address) {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-  const normalized = roundId == null ? undefined : BigInt(roundId);
-
-  const address = useSWR(
-    normalized != null && owner
-      ? ([
-          "lottery",
-          "pda",
-          "buyerEntry",
-          normalized.toString(),
-          owner,
-        ] as const)
-      : null,
-    async ([, , , id, buyer]) => {
-      const pda = pdaAddress(
-        await findBuyerEntryPda({ roundId: BigInt(id), buyer })
-      );
-      console.log(
-        "🔍 BuyerEntry PDA calculated:",
-        pda,
-        "for round:",
-        id,
-        "buyer:",
-        buyer
-      );
-      return pda;
-    },
-    { revalidateOnFocus: false }
-  );
-
-  const result = useSWR(
-    address.data
-      ? ([
-          "lottery",
-          "account",
-          "buyerEntry",
-          cluster,
-          normalized?.toString(),
-          owner,
-          address.data,
-        ] as const)
-      : null,
-    async ([, , , , , , buyerEntryAddress]) => {
-      console.log("🔍 Fetching BuyerEntry account:", buyerEntryAddress);
-      const account = await fetchMaybeBuyerEntry(
-        client.rpc,
-        buyerEntryAddress,
-        {
-          commitment: "confirmed",
-        }
-      );
-      console.log("🔍 BuyerEntry fetch result:", {
-        address: buyerEntryAddress,
-        exists: account.exists,
-        ticketCount: account.exists
-          ? account.data.ticketCount?.toString()
-          : "N/A",
-      });
-      return account;
-    },
-    { revalidateOnFocus: true }
-  );
-
-  useAccountSubscription(address.data, () => result.mutate());
-
-  return {
-    ...result,
-    address: address.data,
-    account: result.data as MaybeAccount<BuyerEntry> | undefined,
-    buyerEntry: exists(result.data) ? result.data.data : undefined,
-    exists: !!result.data?.exists,
-  };
-}
+const TICKETS_RPC_BATCH = 100;
+const TICKETS_DISPLAY_CAP = 500;
 
 export function useTickets(roundId?: bigint | number, owner?: Address) {
   const { cluster } = useCluster();
   const client = useSolanaClient();
-  const normalized = roundId == null ? undefined : BigInt(roundId);
-  const buyerEntry = useBuyerEntry(normalized, owner);
+  const id = roundId == null ? undefined : BigInt(roundId);
+  const buyerEntry = useBuyerEntry(id, owner);
 
   const ticketCount = buyerEntry.buyerEntry?.ticketCount ?? 0n;
-  const cappedTicketCount = ticketCount > 500n ? 500 : Number(ticketCount);
-
-  console.log("🎫 useTickets called:", {
-    roundId: normalized?.toString(),
-    owner,
-    ticketCount: ticketCount.toString(),
-    cappedTicketCount,
-    buyerEntryExists: buyerEntry.exists,
-  });
+  const cappedCount =
+    ticketCount > BigInt(TICKETS_DISPLAY_CAP)
+      ? TICKETS_DISPLAY_CAP
+      : Number(ticketCount);
 
   const addresses = useSWR(
-    normalized != null && owner && cappedTicketCount > 0
+    id != null && owner && cappedCount > 0
       ? ([
           "lottery",
           "pdas",
           "tickets",
-          normalized.toString(),
+          id.toString(),
           owner,
-          cappedTicketCount,
+          cappedCount,
         ] as const)
       : null,
-    async ([, , , id, ticketOwner, count]) => {
-      console.log("🎫 Calculating ticket PDAs for count:", count);
+    async ([, , , idStr, ticketOwner, count]) => {
       const list: Address[] = [];
       for (let i = 0; i < count; i += 1) {
         list.push(
           pdaAddress(
             await findTicketPda({
-              roundId: BigInt(id),
+              roundId: BigInt(idStr),
               owner: ticketOwner,
               ticketIndex: BigInt(i),
             })
           )
         );
       }
-      console.log("🎫 Calculated", list.length, "ticket addresses");
       return list;
     },
     { revalidateOnFocus: false }
@@ -555,64 +224,54 @@ export function useTickets(roundId?: bigint | number, owner?: Address) {
           "accounts",
           "tickets",
           cluster,
-          normalized?.toString(),
+          id?.toString(),
           owner,
           addresses.data.join(","),
         ] as const)
       : null,
     async () => {
-      const allAddresses = addresses.data ?? [];
-      console.log("🎫 Fetching ticket accounts, count:", allAddresses.length);
-      if (allAddresses.length === 0) return [];
-
-      // Batch requests to avoid RPC "Too many inputs" error (max 100 per request)
-      const BATCH_SIZE = 100;
+      const all = addresses.data ?? [];
+      if (all.length === 0) return [];
       const batches: Address[][] = [];
-      for (let i = 0; i < allAddresses.length; i += BATCH_SIZE) {
-        batches.push(allAddresses.slice(i, i + BATCH_SIZE));
+      for (let i = 0; i < all.length; i += TICKETS_RPC_BATCH) {
+        batches.push(all.slice(i, i + TICKETS_RPC_BATCH));
       }
-
-      const results = await Promise.all(
+      const responses = await Promise.all(
         batches.map((batch) =>
           fetchAllMaybeTicket(client.rpc, batch, {
             commitment: "confirmed",
           })
         )
       );
-
-      const flattened = results.flat();
-      console.log("🎫 Fetched tickets:", {
-        total: flattened.length,
-        existing: flattened.filter((t) => t.exists).length,
-      });
-      return flattened;
+      return responses.flat();
     },
     { revalidateOnFocus: true }
   );
 
+  // Subscribe to all ticket PDAs for live updates (claimed flag, etc.).
   useEffect(() => {
     if (!addresses.data?.length) return;
-    const abortController = new AbortController();
+    const abort = new AbortController();
     let stopped = false;
 
     const subscribe = async (address: Address) => {
       try {
         const notifications = await client.rpcSubscriptions
           .accountNotifications(address, { commitment: "confirmed" })
-          .subscribe({ abortSignal: abortController.signal });
-        for await (const notification of notifications) {
-          void notification;
+          .subscribe({ abortSignal: abort.signal });
+        for await (const _ of notifications) {
+          void _;
           if (!stopped) result.mutate();
         }
       } catch {
-        // Revalidation on action/focus remains as fallback.
+        // Fall back to focus / post-action revalidation.
       }
     };
 
     for (const address of addresses.data) void subscribe(address);
     return () => {
       stopped = true;
-      abortController.abort();
+      abort.abort();
     };
   }, [addresses.data, client, result]);
 
@@ -621,74 +280,6 @@ export function useTickets(roundId?: bigint | number, owner?: Address) {
     addresses: addresses.data ?? [],
     buyerEntry,
     tickets: (result.data ?? []).filter(exists),
-    isTruncated: ticketCount > BigInt(cappedTicketCount),
-  };
-}
-
-export function useTicketScan(roundId?: bigint | number) {
-  const { cluster } = useCluster();
-  const client = useSolanaClient();
-  const normalized = roundId == null ? undefined : BigInt(roundId);
-
-  const result = useSWR(
-    normalized != null
-      ? ([
-          "lottery",
-          "scan",
-          "tickets",
-          cluster,
-          normalized.toString(),
-        ] as const)
-      : null,
-    async ([, , , , id]) => {
-      const response = await client.rpc
-        .getProgramAccounts(LOTTERY_PROGRAM_ID, {
-          commitment: "confirmed",
-          encoding: "base64",
-          filters: [
-            // Note: dataSize filter omitted intentionally — Ticket::LEN is
-            // the authoritative size; getProgramAccounts matches full account
-            // allocation which may differ across deployments. Discriminator +
-            // round_id memcmp together are already unique identifiers.
-            {
-              memcmp: {
-                offset: 0n,
-                encoding: "base64",
-                bytes: bytesToBase64(getTicketDiscriminatorBytes()) as never,
-              },
-            },
-            {
-              memcmp: {
-                offset: 8n,
-                encoding: "base64",
-                bytes: bytesToBase64(u64Le(BigInt(id))) as never,
-              },
-            },
-          ],
-        })
-        .send();
-
-      const decoder = getTicketDecoder();
-      return response
-        .map((item) => {
-          const [encoded] = item.account.data as readonly [string, string];
-          return {
-            address: item.pubkey as Address,
-            data: decoder.decode(base64ToBytes(encoded)),
-          };
-        })
-        .sort((a, b) => {
-          if (a.data.owner === b.data.owner) {
-            return Number(a.data.ticketIndex - b.data.ticketIndex);
-          }
-          return a.data.owner.localeCompare(b.data.owner);
-        });
-    },
-    { revalidateOnFocus: true }
-  );
-
-  return {
-    ...result,
-    tickets: (result.data ?? []) as { address: Address; data: Ticket }[],
+    isTruncated: ticketCount > BigInt(cappedCount),
   };
 }

@@ -187,9 +187,15 @@ fn fund_buyer(ctx: &mut Ctx, buyer: &Keypair, usdc_amount: u64) -> Pubkey {
     let ata = CreateAssociatedTokenAccount::new(&mut ctx.svm, buyer, &ctx.payment_mint)
         .send()
         .unwrap();
-    MintTo::new(&mut ctx.svm, &ctx.admin, &ctx.payment_mint, &ata, usdc_amount)
-        .send()
-        .unwrap();
+    MintTo::new(
+        &mut ctx.svm,
+        &ctx.admin,
+        &ctx.payment_mint,
+        &ata,
+        usdc_amount,
+    )
+    .send()
+    .unwrap();
     ata
 }
 
@@ -688,6 +694,6 @@ fn emergency_returns_lp_guarantee_to_lp_principal() {
 }
 
 // solana_sdk re-exports for the spl_token Account::unpack call in ata_balance.
-use solana_sdk::program_pack::Pack;
 use anchor_spl::token::spl_token;
 use lottery::state::lp::LpVault;
+use solana_sdk::program_pack::Pack;

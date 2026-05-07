@@ -2,7 +2,6 @@
 
 import {
   getAddressEncoder,
-  getBytesEncoder,
   getProgramDerivedAddress,
   type Address,
   type ProgramDerivedAddress,
@@ -22,6 +21,7 @@ import {
 } from "../../generated/lottery";
 import { LOTTERY_PROGRAM_ADDRESS } from "../../generated/lottery/programs";
 
+// Re-export codama-generated finders so callers have a single import surface.
 export {
   findConfigPda,
   findLpAuthorityPda,
@@ -38,8 +38,12 @@ export {
 
 export const LOTTERY_PROGRAM_ID = LOTTERY_PROGRAM_ADDRESS;
 
-const textEncoder = getBytesEncoder();
 const addressEncoder = getAddressEncoder();
+const utf8 = new TextEncoder();
+
+function seed(value: string): Uint8Array {
+  return utf8.encode(value);
+}
 
 export function u64Le(value: bigint | number): Uint8Array {
   const out = new Uint8Array(8);
@@ -47,30 +51,31 @@ export function u64Le(value: bigint | number): Uint8Array {
   return out;
 }
 
-function seed(value: string) {
-  return textEncoder.encode(new TextEncoder().encode(value));
-}
+type FindOptions = { programAddress?: Address };
 
-export async function findRoundPda(
+const defaultProgramAddress = (config: FindOptions) =>
+  config.programAddress ?? LOTTERY_PROGRAM_ID;
+
+export function findRoundPda(
   roundId: bigint | number,
-  config: { programAddress?: Address } = {}
+  config: FindOptions = {}
 ): Promise<ProgramDerivedAddress> {
   return getProgramDerivedAddress({
-    programAddress: config.programAddress ?? LOTTERY_PROGRAM_ID,
+    programAddress: defaultProgramAddress(config),
     seeds: [seed("round"), u64Le(roundId)],
   });
 }
 
-export async function findTicketPda(
+export function findTicketPda(
   seeds: {
     roundId: bigint | number;
     owner: Address;
     ticketIndex: bigint | number;
   },
-  config: { programAddress?: Address } = {}
+  config: FindOptions = {}
 ): Promise<ProgramDerivedAddress> {
   return getProgramDerivedAddress({
-    programAddress: config.programAddress ?? LOTTERY_PROGRAM_ID,
+    programAddress: defaultProgramAddress(config),
     seeds: [
       seed("ticket"),
       u64Le(seeds.roundId),
@@ -80,12 +85,12 @@ export async function findTicketPda(
   });
 }
 
-export async function findBuyerEntryPda(
+export function findBuyerEntryPda(
   seeds: { roundId: bigint | number; buyer: Address },
-  config: { programAddress?: Address } = {}
+  config: FindOptions = {}
 ): Promise<ProgramDerivedAddress> {
   return getProgramDerivedAddress({
-    programAddress: config.programAddress ?? LOTTERY_PROGRAM_ID,
+    programAddress: defaultProgramAddress(config),
     seeds: [
       seed("buyer_entry"),
       u64Le(seeds.roundId),
@@ -101,13 +106,13 @@ export async function findBuyerEntryPda(
  * `round.perComboPayout[tier]` by this counter so duplicate winners on the
  * same combo split that combo's allocation evenly.
  */
-export async function findPickCounterPda(
+export function findPickCounterPda(
   seeds: {
     roundId: bigint | number;
     normals: ArrayLike<number>;
     bonusball: number;
   },
-  config: { programAddress?: Address } = {}
+  config: FindOptions = {}
 ): Promise<ProgramDerivedAddress> {
   const normals = Uint8Array.from(seeds.normals);
   if (normals.length !== 5) {
@@ -116,7 +121,7 @@ export async function findPickCounterPda(
     );
   }
   return getProgramDerivedAddress({
-    programAddress: config.programAddress ?? LOTTERY_PROGRAM_ID,
+    programAddress: defaultProgramAddress(config),
     seeds: [
       seed("pick_counter"),
       u64Le(seeds.roundId),

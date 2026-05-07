@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useSWRConfig, type Key } from "swr";
+import { useSWRConfig, type Key, type ScopedMutator } from "swr";
 import { createClient } from "@solana/kit-client-rpc";
 import type { Address, Instruction } from "@solana/kit";
 import { toast } from "sonner";
@@ -21,7 +21,9 @@ export type LotteryActionPlan = {
   allowMainnet?: boolean;
 };
 
-function summarize(plan: LotteryActionPlan, cluster: string): string {
+const MAX_PROMPT_ACCOUNTS = 12;
+
+function summarizePlan(plan: LotteryActionPlan, cluster: string): string {
   const lines = [
     `Action: ${plan.action}`,
     `Cluster: ${cluster}`,
@@ -30,18 +32,38 @@ function summarize(plan: LotteryActionPlan, cluster: string): string {
     `Expected change: ${plan.expectedStateChange}`,
     `Instructions: ${plan.instructions.length}`,
   ];
-
   if (plan.touchedAccounts?.length) {
     lines.push("Accounts:");
-    for (const account of plan.touchedAccounts.slice(0, 12)) {
+    const visible = plan.touchedAccounts.slice(0, MAX_PROMPT_ACCOUNTS);
+    for (const account of visible) {
       lines.push(`- ${account.label}: ${account.address}`);
     }
-    if (plan.touchedAccounts.length > 12) {
-      lines.push(`- ... ${plan.touchedAccounts.length - 12} more`);
-    }
+    const overflow = plan.touchedAccounts.length - MAX_PROMPT_ACCOUNTS;
+    if (overflow > 0) lines.push(`- ... ${overflow} more`);
   }
-
   return lines.join("\n");
+}
+
+/** Invalidate the SWR caches that any successful lottery action could affect. */
+async function invalidateLotteryCaches(
+  mutate: ScopedMutator,
+  extra: readonly Key[]
+): Promise<void> {
+  await mutate(
+    (key: unknown) =>
+      Array.isArray(key) && (key[0] === "lottery" || key[0] === "balance")
+  );
+  for (const key of extra) await mutate(key);
+}
+
+/**
+ * Mark an error as already user-surfaced so upstream catchers don't re-toast.
+ * The flag is read by `useActionTrigger` to decide whether to parse + display.
+ */
+function markErrorAsToastShown(err: unknown) {
+  if (err && typeof err === "object") {
+    (err as { lotteryToastShown?: boolean }).lotteryToastShown = true;
+  }
 }
 
 export function useSendLotteryTransaction() {
@@ -76,7 +98,7 @@ export function useSendLotteryTransaction() {
       const confirmed =
         typeof window === "undefined" ||
         window.confirm(
-          summarize({ ...plan, feePayer: signer.address }, cluster)
+          summarizePlan({ ...plan, feePayer: signer.address }, cluster)
         );
       if (!confirmed) return undefined;
 
@@ -92,26 +114,14 @@ export function useSendLotteryTransaction() {
           id: toastId,
           description: getExplorerUrl(`/tx/${signature}`),
         });
-
-        await mutate(
-          (key: unknown) => Array.isArray(key) && key[0] === "lottery"
-        );
-        await mutate(
-          (key: unknown) => Array.isArray(key) && key[0] === "balance"
-        );
-        for (const key of plan.invalidate ?? []) {
-          await mutate(key);
-        }
-
+        await invalidateLotteryCaches(mutate, plan.invalidate ?? []);
         return signature;
       } catch (err) {
         toast.error(plan.action, {
           id: toastId,
           description: parseTransactionError(err),
         });
-        if (err && typeof err === "object") {
-          (err as { lotteryToastShown?: boolean }).lotteryToastShown = true;
-        }
+        markErrorAsToastShown(err);
         throw err;
       } finally {
         setIsSending(false);

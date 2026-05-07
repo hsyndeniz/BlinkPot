@@ -20,6 +20,8 @@ import {
   pdaAddress,
 } from "./addresses";
 
+// ─── account-meta helpers ──────────────────────────────────────────────────
+
 type InstructionWithAccountList = Instruction &
   InstructionWithAccounts<readonly AccountMeta[]>;
 
@@ -27,17 +29,17 @@ function writable(address: Address): AccountMeta {
   return Object.freeze({ address, role: AccountRole.WRITABLE });
 }
 
-function appendRemainingAccounts<
-  TInstruction extends InstructionWithAccountList,
->(
-  instruction: TInstruction,
-  remainingAccounts: readonly AccountMeta[]
-): TInstruction {
+function appendRemainingAccounts<T extends InstructionWithAccountList>(
+  instruction: T,
+  remaining: readonly AccountMeta[]
+): T {
   return Object.freeze({
     ...instruction,
-    accounts: [...instruction.accounts, ...remainingAccounts],
-  }) as TInstruction;
+    accounts: [...instruction.accounts, ...remaining],
+  }) as T;
 }
+
+// ─── PDA derivations ───────────────────────────────────────────────────────
 
 export async function deriveTicketPdas(input: {
   roundId: bigint;
@@ -69,20 +71,62 @@ export async function derivePickCounterPdas(input: {
   roundId: bigint;
   picks: TicketPickArgs[];
 }): Promise<Address[]> {
-  const out: Address[] = [];
-  for (const pick of input.picks) {
-    out.push(
-      pdaAddress(
-        await findPickCounterPda({
-          roundId: input.roundId,
-          normals: pick.normals,
-          bonusball: pick.bonusball,
-        })
-      )
-    );
-  }
-  return out;
+  return Promise.all(
+    input.picks.map((pick) =>
+      findPickCounterPda({
+        roundId: input.roundId,
+        normals: pick.normals,
+        bonusball: pick.bonusball,
+      }).then(pdaAddress)
+    )
+  );
 }
+
+/**
+ * `buy_tickets` and `process_subscription` use the same `remaining_accounts`
+ * layout: ticket PDAs followed by PickCounter PDAs. This helper derives all
+ * three PDA bundles (buyer entry, ticket list, pick counter list) and shapes
+ * the writable AccountMeta tail both builders append to their instruction.
+ */
+async function prepareTicketBatchAccounts(input: {
+  roundId: bigint;
+  ticketOwner: Address;
+  picks: TicketPickArgs[];
+  firstTicketIndex: bigint;
+}): Promise<{
+  buyerEntry: Address;
+  ticketPdas: Address[];
+  pickCounterPdas: Address[];
+  remaining: AccountMeta[];
+}> {
+  const [buyerEntry, ticketPdas, pickCounterPdas] = await Promise.all([
+    findBuyerEntryPda({
+      roundId: input.roundId,
+      buyer: input.ticketOwner,
+    }).then(pdaAddress),
+    deriveTicketPdas({
+      roundId: input.roundId,
+      owner: input.ticketOwner,
+      firstTicketIndex: input.firstTicketIndex,
+      count: input.picks.length,
+    }),
+    derivePickCounterPdas({
+      roundId: input.roundId,
+      picks: input.picks,
+    }),
+  ]);
+  return {
+    buyerEntry,
+    ticketPdas,
+    pickCounterPdas,
+    remaining: [
+      ...ticketPdas.map(writable),
+      ...pickCounterPdas.map(writable),
+    ],
+  };
+}
+
+// ─── public builders ───────────────────────────────────────────────────────
 
 export async function buildBuyTicketsInstruction(input: {
   buyer: TransactionSigner;
@@ -96,44 +140,30 @@ export async function buildBuyTicketsInstruction(input: {
   referrerAccount?: Address;
   parentReferrerAccount?: Address;
 }) {
-  const buyerEntry = pdaAddress(
-    await findBuyerEntryPda({
-      roundId: input.roundId,
-      buyer: input.buyer.address,
-    })
-  );
-  const ticketPdas = await deriveTicketPdas({
+  const prep = await prepareTicketBatchAccounts({
     roundId: input.roundId,
-    owner: input.buyer.address,
-    firstTicketIndex: input.firstTicketIndex,
-    count: input.picks.length,
-  });
-  const pickCounterPdas = await derivePickCounterPdas({
-    roundId: input.roundId,
+    ticketOwner: input.buyer.address,
     picks: input.picks,
+    firstTicketIndex: input.firstTicketIndex,
   });
+
   const instruction = await getBuyTicketsInstructionAsync({
     buyer: input.buyer,
     round: input.round,
     paymentMint: input.paymentMint,
     buyerTokenAccount: input.buyerTokenAccount,
-    buyerEntry,
+    buyerEntry: prep.buyerEntry,
     referrerAccount: input.referrerAccount,
     parentReferrerAccount: input.parentReferrerAccount,
     picks: input.picks,
     referrer: input.referrer ?? null,
   });
 
-  // remaining_accounts layout matches `buy_tickets`: ticket PDAs first, then the
-  // PickCounter PDAs (one per pick — duplicates allowed; the program upserts).
   return {
-    instruction: appendRemainingAccounts(instruction, [
-      ...ticketPdas.map(writable),
-      ...pickCounterPdas.map(writable),
-    ]),
-    buyerEntry,
-    ticketPdas,
-    pickCounterPdas,
+    instruction: appendRemainingAccounts(instruction, prep.remaining),
+    buyerEntry: prep.buyerEntry,
+    ticketPdas: prep.ticketPdas,
+    pickCounterPdas: prep.pickCounterPdas,
   };
 }
 
@@ -148,37 +178,28 @@ export async function buildProcessSubscriptionInstruction(input: {
   referrerAccount?: Address;
   parentReferrerAccount?: Address;
 }) {
-  const buyerEntry = pdaAddress(
-    await findBuyerEntryPda({ roundId: input.roundId, buyer: input.owner })
-  );
-  const ticketPdas = await deriveTicketPdas({
+  const prep = await prepareTicketBatchAccounts({
     roundId: input.roundId,
-    owner: input.owner,
-    firstTicketIndex: input.firstTicketIndex,
-    count: input.picks.length,
-  });
-  const pickCounterPdas = await derivePickCounterPdas({
-    roundId: input.roundId,
+    ticketOwner: input.owner,
     picks: input.picks,
+    firstTicketIndex: input.firstTicketIndex,
   });
+
   const instruction = await getProcessSubscriptionInstructionAsync({
     keeper: input.keeper,
     owner: input.owner,
     round: input.round,
     paymentMint: input.paymentMint,
-    buyerEntry,
+    buyerEntry: prep.buyerEntry,
     referrerAccount: input.referrerAccount,
     parentReferrerAccount: input.parentReferrerAccount,
     picks: input.picks,
   });
 
   return {
-    instruction: appendRemainingAccounts(instruction, [
-      ...ticketPdas.map(writable),
-      ...pickCounterPdas.map(writable),
-    ]),
-    buyerEntry,
-    ticketPdas,
-    pickCounterPdas,
+    instruction: appendRemainingAccounts(instruction, prep.remaining),
+    buyerEntry: prep.buyerEntry,
+    ticketPdas: prep.ticketPdas,
+    pickCounterPdas: prep.pickCounterPdas,
   };
 }

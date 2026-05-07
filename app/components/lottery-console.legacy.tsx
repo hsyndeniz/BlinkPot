@@ -92,7 +92,7 @@ import {
   countTicketMatches,
   isWinningTicket,
   tierForMatch,
-} from "../lib/lottery/tally";
+} from "../lib/lottery/picks";
 import {
   buildCreateRandomnessInstruction,
   buildSwitchboardCommitInstruction,
@@ -601,15 +601,16 @@ function DecimalsHeadsUp(props: { decimals: number; detected: boolean }) {
         Amount fields use the payment mint&rsquo;s base units.
       </strong>{" "}
       <span>
-        Enter <em>whole-token amounts</em> (e.g. <code className="font-mono">1</code>{" "}
-        for 1 token, <code className="font-mono">0.25</code> for ¼ token) for{" "}
+        Enter <em>whole-token amounts</em> (e.g.{" "}
+        <code className="font-mono">1</code> for 1 token,{" "}
+        <code className="font-mono">0.25</code> for ¼ token) for{" "}
         <span className="font-mono">defaultTicketPrice</span>,{" "}
         <span className="font-mono">guaranteedPrizePool</span>,{" "}
         <span className="font-mono">lpPoolCap</span>,{" "}
         <span className="font-mono">bonusballPoolStepUnits</span>, and{" "}
-        <span className="font-mono">tierMinPayoutPerWinner</span>. They are converted
-        to base units automatically using the mint&rsquo;s decimals — no manual
-        scaling required.
+        <span className="font-mono">tierMinPayoutPerWinner</span>. They are
+        converted to base units automatically using the mint&rsquo;s decimals —
+        no manual scaling required.
       </span>{" "}
       {props.detected ? (
         <span>
@@ -861,7 +862,7 @@ function useNowSeconds() {
   return nowSeconds;
 }
 
-export function LotteryConsole() {
+export function LotteryConsoleLegacy() {
   const { signer, wallet, status } = useWallet();
   const { cluster } = useCluster();
   const client = useSolanaClient();
@@ -922,7 +923,10 @@ export function LotteryConsole() {
     rounds.rounds?.length,
   ]);
   const mintInfo = useMint(config?.paymentMint);
-  const userPaymentAccount = useTokenAccount(walletAddress, config?.paymentMint);
+  const userPaymentAccount = useTokenAccount(
+    walletAddress,
+    config?.paymentMint
+  );
   const programTokens = useProgramTokenAddresses(
     config?.paymentMint,
     walletAddress
@@ -1168,7 +1172,9 @@ export function LotteryConsole() {
 
       const totalCost = activeRound.round.ticketPrice * BigInt(picks.length);
       if (userPaymentAccount.amount < totalCost) {
-        throw new Error(`Insufficient ${symbol} balance for this ticket batch.`);
+        throw new Error(
+          `Insufficient ${symbol} balance for this ticket batch.`
+        );
       }
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
@@ -1362,8 +1368,7 @@ export function LotteryConsole() {
       await send({
         action: "Initiate LP withdraw",
         instructions: [instruction],
-        expectedStateChange:
-          `${symbol} amount is converted to LP shares and moved to pending withdrawal.`,
+        expectedStateChange: `${symbol} amount is converted to LP shares and moved to pending withdrawal.`,
         touchedAccounts: [
           { label: "LP vault", address: lpVault.address! },
           {
@@ -1427,8 +1432,7 @@ export function LotteryConsole() {
       await send({
         action: "Emergency LP withdraw",
         instructions: [createAta, instruction],
-        expectedStateChange:
-          `All LP shares are burned and ${symbol} is returned to owner.`,
+        expectedStateChange: `All LP shares are burned and ${symbol} is returned to owner.`,
         touchedAccounts: [
           { label: "LP vault", address: lpVault.address! },
           { label: "owner ATA", address: ata },
@@ -1512,7 +1516,9 @@ export function LotteryConsole() {
       const escrowAmount =
         cfg.defaultTicketPrice * BigInt(dailyTicketCount) * BigInt(days);
       if (userPaymentAccount.amount < escrowAmount) {
-        throw new Error(`Insufficient ${symbol} balance for subscription escrow.`);
+        throw new Error(
+          `Insufficient ${symbol} balance for subscription escrow.`
+        );
       }
       const { ata, createAta } = await buildWalletAta(
         walletSigner,
@@ -2348,7 +2354,10 @@ export function LotteryConsole() {
                         <div className="flex justify-between gap-3">
                           <span>User {symbol}</span>
                           <span className="font-mono">
-                            {formatTokenAmount(userPaymentAccount.amount, decimals)}
+                            {formatTokenAmount(
+                              userPaymentAccount.amount,
+                              decimals
+                            )}
                           </span>
                         </div>
                         <div className="flex justify-between gap-3">
@@ -2494,7 +2503,7 @@ export function LotteryConsole() {
                             expected)
                           </p>
                           <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-                            If tickets don't appear after a few seconds, try
+                            If tickets do not appear after a few seconds, try
                             refreshing the page. Large batches may take longer
                             to index.
                           </p>
@@ -2985,7 +2994,8 @@ export function LotteryConsole() {
                         decimals={setupMint.decimals}
                         detected={!!setupMint.mint}
                       />
-                      <ConfigFormFields symbol={symbol}
+                      <ConfigFormFields
+                        symbol={symbol}
                         form={effectiveConfigForm}
                         onChange={handleConfigFormChange}
                       />
@@ -3012,7 +3022,8 @@ export function LotteryConsole() {
                     }
                   >
                     <DecimalsHeadsUp decimals={decimals} detected />
-                    <ConfigFormFields symbol={symbol}
+                    <ConfigFormFields
+                      symbol={symbol}
                       form={effectiveConfigForm}
                       onChange={handleConfigFormChange}
                     />

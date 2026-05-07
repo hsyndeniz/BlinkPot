@@ -19,28 +19,20 @@ import {
 import type { ClusterMoniker } from "../solana-client";
 import { getClusterUrl } from "../solana-client";
 
-type SwitchboardContext = {
-  sb: typeof import("@switchboard-xyz/on-demand");
-  connection: Connection;
-  program: Awaited<
-    ReturnType<
-      typeof import("@switchboard-xyz/on-demand").AnchorUtils.loadProgramFromConnection
-    >
-  >;
-  queue: Awaited<
-    ReturnType<typeof import("@switchboard-xyz/on-demand").getDefaultQueue>
-  >;
-};
+// ─── kit ↔ web3.js bridge ──────────────────────────────────────────────────
+// Switchboard's SDK only emits @solana/web3.js v1 instructions. These helpers
+// translate them into kit Instruction objects so the rest of the app can stay
+// kit-native.
 
-function asAddress(publicKey: PublicKey): Address {
-  return publicKey.toBase58() as Address;
-}
-
-function accountRole(isWritable: boolean, isSigner: boolean): AccountRole {
+function pickAccountRole(isWritable: boolean, isSigner: boolean): AccountRole {
   if (isWritable && isSigner) return AccountRole.WRITABLE_SIGNER;
   if (isWritable) return AccountRole.WRITABLE;
   if (isSigner) return AccountRole.READONLY_SIGNER;
   return AccountRole.READONLY;
+}
+
+function asAddress(publicKey: PublicKey): Address {
+  return publicKey.toBase58() as Address;
 }
 
 function web3InstructionToKit(
@@ -52,15 +44,8 @@ function web3InstructionToKit(
     const address = asAddress(key.pubkey);
     const signer = signers.get(address);
     const meta: AccountMeta | (AccountMeta & AccountSignerMeta) = signer
-      ? {
-          address,
-          role: accountRole(key.isWritable, true),
-          signer,
-        }
-      : {
-          address,
-          role: accountRole(key.isWritable, key.isSigner),
-        };
+      ? { address, role: pickAccountRole(key.isWritable, true), signer }
+      : { address, role: pickAccountRole(key.isWritable, key.isSigner) };
     return Object.freeze(meta);
   });
 
@@ -71,21 +56,51 @@ function web3InstructionToKit(
   });
 }
 
-async function loadSwitchboard(
-  cluster: ClusterMoniker
-): Promise<SwitchboardContext> {
+// ─── Switchboard context loader ────────────────────────────────────────────
+// Importing the Switchboard SDK + creating a Connection + loading the program
+// + fetching the queue is expensive (hundreds of ms). Cache one promise per
+// cluster so Prepare → Commit → Reveal share the load instead of re-doing it
+// three times.
+
+type SwitchboardSdk = typeof import("@switchboard-xyz/on-demand");
+
+type SwitchboardContext = {
+  sb: SwitchboardSdk;
+  connection: Connection;
+  program: Awaited<
+    ReturnType<SwitchboardSdk["AnchorUtils"]["loadProgramFromConnection"]>
+  >;
+  queue: Awaited<ReturnType<SwitchboardSdk["getDefaultQueue"]>>;
+};
+
+const switchboardCache = new Map<ClusterMoniker, Promise<SwitchboardContext>>();
+
+function loadSwitchboard(cluster: ClusterMoniker): Promise<SwitchboardContext> {
   if (cluster !== "devnet") {
-    throw new Error(
-      "Switchboard randomness is enabled only on devnet in Console V1."
+    return Promise.reject(
+      new Error(
+        "Switchboard randomness is enabled only on devnet in Console V1."
+      )
     );
   }
+  const cached = switchboardCache.get(cluster);
+  if (cached) return cached;
 
-  const sb = await import("@switchboard-xyz/on-demand");
-  const connection = new Connection(getClusterUrl(cluster), "confirmed");
-  const program = await sb.AnchorUtils.loadProgramFromConnection(connection);
-  const queue = await sb.getDefaultQueue(connection.rpcEndpoint);
-  return { sb, connection, program, queue };
+  const promise = (async () => {
+    const sb = await import("@switchboard-xyz/on-demand");
+    const connection = new Connection(getClusterUrl(cluster), "confirmed");
+    const program = await sb.AnchorUtils.loadProgramFromConnection(connection);
+    const queue = await sb.getDefaultQueue(connection.rpcEndpoint);
+    return { sb, connection, program, queue };
+  })();
+
+  // Drop the cache on failure so a retry can re-attempt cleanly.
+  promise.catch(() => switchboardCache.delete(cluster));
+  switchboardCache.set(cluster, promise);
+  return promise;
 }
+
+// ─── public builders ───────────────────────────────────────────────────────
 
 export async function buildCreateRandomnessInstruction(input: {
   cluster: ClusterMoniker;
