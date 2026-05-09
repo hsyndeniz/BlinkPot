@@ -11,8 +11,11 @@ export function useLpInitiateWithdraw() {
     async (input: { shares: bigint }) => {
       const signer = ctx.requireSigner();
       if (input.shares <= 0n) throw new Error("Shares must be positive.");
-      if (input.shares > BigInt(Number.MAX_SAFE_INTEGER)) {
-        // Anchor instruction takes a u64 — guard against overflow on encode.
+      // Anchor instruction takes a u64 — guard against the actual overflow
+      // boundary, not Number.MAX_SAFE_INTEGER (which is ~3 orders of
+      // magnitude smaller and rejects legitimate withdrawals).
+      const U64_MAX = (1n << 64n) - 1n;
+      if (input.shares > U64_MAX) {
         throw new Error(
           "Shares exceed the per-instruction u64 limit. Withdraw in smaller batches."
         );

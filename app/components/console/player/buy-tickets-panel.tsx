@@ -52,7 +52,7 @@ function parseManualPick(
   if (normals.length !== 5)
     throw new Error("Enter exactly 5 comma-separated normal balls.");
   const sorted = [...normals].sort((a, b) => a - b);
-  if (sorted.some((n, i) => n <= 0 || n > normalMax))
+  if (sorted.some((n) => n <= 0 || n > normalMax))
     throw new Error(`Each normal ball must be 1..${normalMax}.`);
   if (sorted.some((n, i) => i > 0 && n === sorted[i - 1]))
     throw new Error("Normal balls must be unique.");

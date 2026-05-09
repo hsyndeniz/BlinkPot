@@ -1,10 +1,10 @@
 "use client";
 
+import { Alert, Button } from "@heroui/react";
 import { useConfig } from "../../../lib/lottery/accounts";
 import { useConsole } from "../../../lib/console/console-context";
 import { useIsAdmin } from "../../../lib/lottery/admin";
 import { useSetEmergencyMode } from "../../../lib/lottery/actions";
-import { ActionButton } from "../shared";
 
 export function EmergencyBanner() {
   const { config } = useConfig();
@@ -13,36 +13,57 @@ export function EmergencyBanner() {
   const setEmergencyMode = useSetEmergencyMode();
 
   if (!config?.emergencyMode) return null;
+
   return (
-    <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
-      <div className="flex items-center justify-between gap-3">
-        <span>
-          <strong className="font-semibold">Emergency mode active.</strong>{" "}
+    <Alert status="danger">
+      <Alert.Indicator />
+      <Alert.Content>
+        <Alert.Title>Emergency mode active</Alert.Title>
+        <Alert.Description>
           Normal operations are frozen — only emergency refunds and emergency
           LP exits are available.
-        </span>
-        <div className="flex items-center gap-2">
-          <ActionButton
-            variant="secondary"
+        </Alert.Description>
+        <div className="mt-2 flex flex-wrap gap-2 sm:hidden">
+          <Button
             size="sm"
-            onClick={() => setActiveTab("emergency")}
+            variant="danger"
+            onPress={() => setActiveTab("emergency")}
           >
             Open emergency tools
-          </ActionButton>
+          </Button>
           {isAdmin && (
-            <ActionButton
-              variant="secondary"
+            <Button
               size="sm"
+              variant="outline"
               isPending={setEmergencyMode.isPending}
-              onClick={() =>
+              onPress={() =>
                 void setEmergencyMode.trigger(false).catch(() => {})
               }
             >
               Exit emergency
-            </ActionButton>
+            </Button>
           )}
         </div>
+      </Alert.Content>
+      <div className="hidden gap-2 sm:flex">
+        <Button
+          size="sm"
+          variant="danger"
+          onPress={() => setActiveTab("emergency")}
+        >
+          Open emergency tools
+        </Button>
+        {isAdmin && (
+          <Button
+            size="sm"
+            variant="outline"
+            isPending={setEmergencyMode.isPending}
+            onPress={() => void setEmergencyMode.trigger(false).catch(() => {})}
+          >
+            Exit emergency
+          </Button>
+        )}
       </div>
-    </div>
+    </Alert>
   );
 }

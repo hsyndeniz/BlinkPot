@@ -34,14 +34,10 @@ export function useActionTrigger<TArgs extends unknown[], TResult>(
       try {
         return await fn(...args);
       } catch (err) {
-        const message =
-          err instanceof Error
-            ? (err as Error & { lotteryToastShown?: boolean })
-                .lotteryToastShown
-              ? err.message
-              : parseTransactionError(err)
-            : parseTransactionError(err);
-        setLastError(message);
+        // Always parse — the `lotteryToastShown` flag only prevents the
+        // transaction layer from emitting a duplicate toast; it must not
+        // leak the raw error message into UI surfaces (Alerts, etc.).
+        setLastError(parseTransactionError(err));
         throw err;
       } finally {
         setIsPending(false);

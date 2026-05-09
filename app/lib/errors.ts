@@ -62,6 +62,25 @@ function truncate(s: string): string {
   return s.length > MAX_ERROR_LENGTH ? `${s.slice(0, MAX_ERROR_LENGTH)}...` : s;
 }
 
+/**
+ * Extract a custom program error code from an arbitrary error message.
+ * RPC preflight failures, AnchorError logs, and various wallet wrappers
+ * surface the code as a stringified number/hex rather than as a typed
+ * SolanaError, so we recover it from the raw text.
+ */
+function extractProgramErrorCode(message: string): number | null {
+  // "custom program error: 0x177d" — final hex form.
+  const hex = message.match(/custom program error:?\s*0x([0-9a-f]+)/i);
+  if (hex) return Number.parseInt(hex[1], 16);
+  // "Custom program error: #6013" — preflight summary.
+  const dec = message.match(/custom program error:?\s*#?(\d+)/i);
+  if (dec) return Number.parseInt(dec[1], 10);
+  // "Error Number: 6013" — AnchorError log line.
+  const anchor = message.match(/Error Number:\s*(\d+)/);
+  if (anchor) return Number.parseInt(anchor[1], 10);
+  return null;
+}
+
 export function parseTransactionError(err: unknown): string {
   if (err instanceof Error && err.message.includes("User rejected")) {
     return "Transaction was rejected by the wallet.";
@@ -74,5 +93,12 @@ export function parseTransactionError(err: unknown): string {
       truncate(getDeepestMessage(err))
     );
   }
-  return truncate(getDeepestMessage(err));
+
+  const message = getDeepestMessage(err);
+  const extracted = extractProgramErrorCode(message);
+  if (extracted != null) {
+    const friendly = lotteryErrorMessage(extracted) ?? vaultErrorMessage(extracted);
+    if (friendly) return friendly;
+  }
+  return truncate(message);
 }

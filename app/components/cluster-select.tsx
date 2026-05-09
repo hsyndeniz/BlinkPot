@@ -1,78 +1,49 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { Button, Dropdown, Label } from "@heroui/react";
+import { Check } from "@gravity-ui/icons";
+import type { ClusterMoniker } from "../lib/solana-client";
 import { useCluster, CLUSTERS } from "./cluster-context";
+
+const CLUSTER_DOT: Record<string, string> = {
+  mainnet: "bg-success",
+  devnet: "bg-accent",
+  testnet: "bg-warning",
+};
+
+function Dot(props: { cluster: string }) {
+  return (
+    <span
+      className={`size-2 rounded-full ${CLUSTER_DOT[props.cluster] ?? "bg-muted"}`}
+    />
+  );
+}
 
 export function ClusterSelect() {
   const { cluster, setCluster } = useCluster();
-  const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex cursor-pointer items-center gap-2 rounded-lg border border-border-low bg-card px-3 py-2 text-xs font-medium transition hover:bg-cream"
-      >
-        <span
-          className="h-2 w-2 rounded-full"
-          style={{
-            backgroundColor:
-              cluster === "mainnet"
-                ? "#22c55e"
-                : cluster === "devnet"
-                  ? "#3b82f6"
-                  : cluster === "testnet"
-                    ? "#eab308"
-                    : "#a3a3a3",
-          }}
-        />
+    <Dropdown>
+      <Button variant="outline" size="sm">
+        <Dot cluster={cluster} />
         {cluster}
-      </button>
-
-      {isOpen && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-40 rounded-xl border border-border-low bg-card p-2 shadow-lg">
-          <div className="space-y-1">
-            {CLUSTERS.map((c) => (
-              <button
-                key={c}
-                onClick={() => {
-                  setCluster(c);
-                  setIsOpen(false);
-                }}
-                className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium transition hover:bg-cream ${
-                  c === cluster ? "bg-cream" : ""
-                }`}
-              >
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{
-                    backgroundColor:
-                      c === "mainnet"
-                        ? "#22c55e"
-                        : c === "devnet"
-                          ? "#3b82f6"
-                          : c === "testnet"
-                            ? "#eab308"
-                            : "#a3a3a3",
-                  }}
-                />
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+      </Button>
+      <Dropdown.Popover placement="bottom end">
+        <Dropdown.Menu
+          aria-label="Cluster"
+          selectionMode="single"
+          selectedKeys={new Set([cluster])}
+          onAction={(key) => setCluster(key as ClusterMoniker)}
+        >
+          {CLUSTERS.map((c) => (
+            <Dropdown.Item key={c} id={c} textValue={c}>
+              <Dot cluster={c} />
+              <Label>{c}</Label>
+              {c === cluster && <Check />}
+            </Dropdown.Item>
+          ))}
+        </Dropdown.Menu>
+      </Dropdown.Popover>
+    </Dropdown>
   );
 }

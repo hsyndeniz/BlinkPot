@@ -43,11 +43,14 @@ export function DrawController() {
 
   const [randomnessInput, setRandomnessInput] = useState("");
 
-  // Reload persisted randomness key on round / cluster change.
+  // Reload persisted randomness key on round / cluster change. Reading from
+  // localStorage is an external-source sync — the rule's normal "no setState
+  // in effect" guard doesn't apply here.
   useEffect(() => {
     const key = getRandomnessStorageKey(cluster, round?.roundId);
     if (!key) return;
     const stored = window.localStorage.getItem(key);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (stored) setRandomnessInput(stored);
   }, [cluster, round?.roundId]);
 

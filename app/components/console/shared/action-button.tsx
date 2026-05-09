@@ -1,8 +1,19 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Button } from "@heroui/react";
 
 type Variant = "primary" | "secondary" | "danger" | "ghost";
+
+const VARIANT_MAP: Record<
+  Variant,
+  "primary" | "outline" | "danger" | "ghost"
+> = {
+  primary: "primary",
+  secondary: "outline",
+  danger: "danger",
+  ghost: "ghost",
+};
 
 export function ActionButton(props: {
   children: ReactNode;
@@ -24,29 +35,20 @@ export function ActionButton(props: {
     size = "md",
     isPending,
     pendingLabel,
-    className = "",
+    className,
   } = props;
 
-  const variantClass =
-    variant === "primary"
-      ? "bg-primary text-primary-foreground hover:bg-primary/90"
-      : variant === "danger"
-        ? "border border-destructive/30 text-destructive hover:bg-destructive/10"
-        : variant === "ghost"
-          ? "text-foreground hover:bg-cream"
-          : "border border-border-low bg-card hover:bg-cream";
-
-  const sizeClass =
-    size === "sm" ? "h-7 px-2 text-[11px]" : "h-9 px-3 text-xs";
-
   return (
-    <button
+    <Button
       type={type}
-      onClick={onClick}
-      disabled={disabled || isPending}
-      className={`cursor-pointer rounded-lg font-semibold transition disabled:pointer-events-none disabled:opacity-45 ${variantClass} ${sizeClass} ${className}`}
+      size={size}
+      variant={VARIANT_MAP[variant]}
+      isDisabled={disabled}
+      isPending={isPending}
+      onPress={onClick}
+      className={className}
     >
-      {isPending ? (pendingLabel ?? "Working…") : children}
-    </button>
+      {isPending && pendingLabel ? pendingLabel : children}
+    </Button>
   );
 }

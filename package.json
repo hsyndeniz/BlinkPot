@@ -26,6 +26,9 @@
   "version": "0.0.0",
   "private": true,
   "dependencies": {
+    "@gravity-ui/icons": "^2.18.0",
+    "@heroui/react": "^3.0.4",
+    "@heroui/styles": "^3.0.4",
     "@solana-program/token": "^0.13.0",
     "@solana/kit": "^6.3.0",
     "@solana/kit-client-rpc": "^0.7.0",

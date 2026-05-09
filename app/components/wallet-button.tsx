@@ -1,6 +1,16 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
+import Link from "next/link";
+import { Button, Popover, Separator, Surface } from "@heroui/react";
+import {
+  Circle,
+  House,
+  Persons,
+  ShieldCheck,
+  Terminal,
+  Ticket,
+} from "@gravity-ui/icons";
 import { useWallet } from "../lib/wallet/context";
 import { useBalance } from "../lib/hooks/use-balance";
 import { lamportsToSolString } from "../lib/lamports";
@@ -10,27 +20,12 @@ import { useCluster } from "./cluster-context";
 export function WalletButton() {
   const { connectors, connect, disconnect, wallet, status, error } =
     useWallet();
-
   const { getExplorerUrl } = useCluster();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   const address = wallet?.account.address;
   const balance = useBalance(address);
-
-  const open = () => setIsOpen(true);
-  const close = () => setIsOpen(false);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        close();
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const handleCopy = async () => {
     if (!address) return;
@@ -41,113 +36,166 @@ export function WalletButton() {
 
   if (status !== "connected") {
     return (
-      <div className="relative" ref={ref}>
-        <button
-          onClick={() => (isOpen ? close() : open())}
-          className="cursor-pointer rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-xs transition hover:bg-primary/90"
-        >
-          Connect Wallet
-        </button>
-
-        {isOpen && (
-          <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-border-low bg-card p-3 shadow-lg">
-            <p className="mb-2 text-xs font-medium text-muted">
-              Choose a wallet
-            </p>
-            <div className="space-y-1">
+      <Popover isOpen={isOpen} onOpenChange={setIsOpen}>
+        <Popover.Trigger>
+          <Button variant="primary" size="sm">
+            Connect Wallet
+          </Button>
+        </Popover.Trigger>
+        <Popover.Content placement="bottom end" className="w-64">
+          <Popover.Dialog className="grid gap-2">
+            <Popover.Heading>Choose a wallet</Popover.Heading>
+            <div className="grid gap-1">
               {connectors.map((connector) => (
-                <button
+                <Button
                   key={connector.id}
-                  onClick={async () => {
+                  variant="ghost"
+                  size="sm"
+                  fullWidth
+                  className="justify-start"
+                  isDisabled={status === "connecting"}
+                  onPress={async () => {
                     try {
                       await connect(connector.id);
-                      close();
+                      setIsOpen(false);
                     } catch {
-                      // connection errors are surfaced through context state
+                      // surfaced via context state
                     }
                   }}
-                  disabled={status === "connecting"}
-                  className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition hover:bg-cream disabled:opacity-50 disabled:pointer-events-none"
                 >
                   {connector.icon && (
+                    // eslint-disable-next-line @next/next/no-img-element -- connector icons are external data URLs, not assets we own
                     <img
                       src={connector.icon}
                       alt=""
-                      className="h-5 w-5 rounded"
+                      className="size-5 rounded"
                     />
                   )}
-                  <span>{connector.name}</span>
-                </button>
+                  {connector.name}
+                </Button>
               ))}
             </div>
             {status === "connecting" && (
-              <p className="mt-2 text-xs text-muted">Connecting...</p>
+              <p className="text-xs text-muted">Connecting...</p>
             )}
             {error != null && (
-              <p className="mt-2 text-xs text-destructive">
+              <p className="text-xs text-danger">
                 {error instanceof Error ? error.message : String(error)}
               </p>
             )}
-          </div>
-        )}
-      </div>
+          </Popover.Dialog>
+        </Popover.Content>
+      </Popover>
     );
   }
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => (isOpen ? close() : open())}
-        className="flex cursor-pointer items-center gap-2 rounded-lg border border-border-low bg-card px-3 py-2 text-xs font-medium transition hover:bg-cream"
-      >
-        <span className="h-2 w-2 rounded-full bg-green-500" />
-        <span className="font-mono">{ellipsify(address!, 4)}</span>
-      </button>
-
-      {isOpen && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-xl border border-border-low bg-card p-4 shadow-lg">
-          <div className="mb-3">
-            <p className="text-xs text-muted">Balance</p>
+    <Popover isOpen={isOpen} onOpenChange={setIsOpen}>
+      <Popover.Trigger>
+        <Button variant="outline" size="sm">
+          <Circle className="size-1.5 text-success" />
+          <span className="font-mono">{ellipsify(address!, 4)}</span>
+        </Button>
+      </Popover.Trigger>
+      <Popover.Content placement="bottom end" className="w-72">
+        <Popover.Dialog className="grid gap-3">
+          <div className="grid gap-1">
+            <span className="text-xs text-muted">Balance</span>
             <p className="text-lg font-bold tabular-nums">
               {balance.lamports != null
                 ? lamportsToSolString(balance.lamports)
-                : "\u2014"}{" "}
+                : "—"}{" "}
               <span className="text-sm font-normal text-muted">SOL</span>
             </p>
           </div>
 
-          <div className="mb-3 rounded-lg border border-border-low bg-cream/50 px-3 py-2">
+          <Surface variant="secondary" className="rounded-lg p-2">
             <p className="break-all font-mono text-xs">{address}</p>
+          </Surface>
+
+          <div className="grid">
+            <Link
+              href="/"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-default-100"
+            >
+              <House className="size-4 text-muted" />
+              Play
+            </Link>
+            <Link
+              href="/tickets"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-default-100"
+            >
+              <Ticket className="size-4 text-muted" />
+              My tickets
+            </Link>
+            <Link
+              href="/referrals"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-default-100"
+            >
+              <Persons className="size-4 text-muted" />
+              Referrals
+            </Link>
+            <Link
+              href="/liquidity"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-default-100"
+            >
+              <ShieldCheck className="size-4 text-muted" />
+              Liquidity
+            </Link>
+            <Link
+              href="/console"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-default-100"
+            >
+              <Terminal className="size-4 text-muted" />
+              Console
+            </Link>
           </div>
+
+          <Separator />
 
           <div className="flex gap-2">
-            <button
-              onClick={handleCopy}
-              className="flex-1 cursor-pointer rounded-lg border border-border-low bg-card px-3 py-2 text-xs font-medium transition hover:bg-cream"
+            <Button
+              variant="outline"
+              size="sm"
+              fullWidth
+              onPress={() => void handleCopy()}
             >
               {copied ? "Copied!" : "Copy address"}
-            </button>
-            <a
-              href={getExplorerUrl(`/address/${address}`)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 rounded-lg border border-border-low bg-card px-3 py-2 text-center text-xs font-medium transition hover:bg-cream"
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              fullWidth
+              onPress={() => {
+                window.open(
+                  getExplorerUrl(`/address/${address}`),
+                  "_blank",
+                  "noopener,noreferrer"
+                );
+              }}
             >
               Explorer
-            </a>
+            </Button>
           </div>
 
-          <button
-            onClick={() => {
+          <Button
+            variant="ghost"
+            size="sm"
+            fullWidth
+            onPress={() => {
               disconnect();
-              close();
+              setIsOpen(false);
             }}
-            className="mt-2 w-full cursor-pointer rounded-lg border border-border-low bg-card px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive/10"
           >
             Disconnect
-          </button>
-        </div>
-      )}
-    </div>
+          </Button>
+        </Popover.Dialog>
+      </Popover.Content>
+    </Popover>
   );
 }

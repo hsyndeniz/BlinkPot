@@ -51,7 +51,15 @@ pub const DEFAULT_BONUSBALL_MAX: u8 = 15;
 pub const MIN_BONUSBALL_MAX: u8 = 5;
 pub const MAX_BONUSBALL_MAX: u8 = 64;
 
-pub const MAX_TICKETS_PER_BATCH: usize = 30;
+/// Tickets per `buy_tickets` / `process_subscription` batch.
+///
+/// Each ticket adds 2 writable PDAs (Ticket + PickCounter) to
+/// `remaining_accounts`. With the 16 fixed accounts and a prepended
+/// `create_associated_token_account` instruction in the buy tx, 7 keeps us
+/// under Solana's 64-account / 1232-byte legacy tx limits with headroom.
+/// Raising this requires Address Lookup Tables (to compress the 16 fixed
+/// accounts) or a protocol change that drops per-ticket PDAs.
+pub const MAX_TICKETS_PER_BATCH: usize = 7;
 pub const MIN_ROUND_DURATION_SECS: i64 = 60;
 pub const MAX_ROUND_DURATION_SECS: i64 = 7 * 24 * 60 * 60;
 pub const EMERGENCY_TIMEOUT_SECS: i64 = 60 * 60;
@@ -63,7 +71,9 @@ pub const SHARE_SCALE: u128 = 1_000_000_000_000;
 pub const INITIAL_SHARES_PER_TOKEN_UNIT: u128 = 1_000_000;
 
 pub const MAX_DAYS_PER_SUBSCRIPTION: u16 = 365;
-pub const MAX_DAILY_TICKETS_PER_SUB: u8 = 20;
+/// Must be `<= MAX_TICKETS_PER_BATCH` because `process_subscription`
+/// requires `picks.len() == daily_ticket_count` in a single transaction.
+pub const MAX_DAILY_TICKETS_PER_SUB: u8 = 7;
 
 /// Minimum BPS that must be reserved for the prize pool (after LP edge + referral fees).
 /// Enforces the protocol's "70% to players" philosophy with a 50% absolute floor.

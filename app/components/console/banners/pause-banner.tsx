@@ -1,9 +1,9 @@
 "use client";
 
+import { Alert, Button } from "@heroui/react";
 import { useConfig } from "../../../lib/lottery/accounts";
 import { useIsAdmin } from "../../../lib/lottery/admin";
 import { useSetPaused } from "../../../lib/lottery/actions";
-import { ActionButton } from "../shared";
 
 export function PauseBanner() {
   const { config } = useConfig();
@@ -11,24 +11,38 @@ export function PauseBanner() {
   const setPaused = useSetPaused();
 
   if (!config?.paused) return null;
+
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">
-      <div className="flex items-center justify-between gap-3">
-        <span>
-          <strong className="font-semibold">Protocol paused.</strong> Most
-          actions are blocked until an admin resumes operations.
-        </span>
+    <Alert status="warning">
+      <Alert.Indicator />
+      <Alert.Content>
+        <Alert.Title>Protocol paused</Alert.Title>
+        <Alert.Description>
+          Most actions are blocked until an admin resumes operations.
+        </Alert.Description>
         {isAdmin && (
-          <ActionButton
-            variant="secondary"
+          <Button
+            className="mt-2 sm:hidden"
             size="sm"
+            variant="primary"
             isPending={setPaused.isPending}
-            onClick={() => void setPaused.trigger(false).catch(() => {})}
+            onPress={() => void setPaused.trigger(false).catch(() => {})}
           >
             Resume
-          </ActionButton>
+          </Button>
         )}
-      </div>
-    </div>
+      </Alert.Content>
+      {isAdmin && (
+        <Button
+          className="hidden sm:inline-flex"
+          size="sm"
+          variant="primary"
+          isPending={setPaused.isPending}
+          onPress={() => void setPaused.trigger(false).catch(() => {})}
+        >
+          Resume
+        </Button>
+      )}
+    </Alert>
   );
 }

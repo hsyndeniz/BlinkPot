@@ -127,7 +127,7 @@ const KNOWN_TOKEN_SYMBOLS: Readonly<Record<string, string>> = {
   "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": "USDC",
 };
 
-const FALLBACK_SYMBOL = "tokens";
+const FALLBACK_SYMBOL = "USDC";
 
 export function tokenSymbolFor(mint?: Address | string): string {
   if (!mint) return FALLBACK_SYMBOL;

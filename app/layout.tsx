@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Megapot Lottery",
-  description: "Megapot lottery operations console powered by Solana",
+  title: "BlinkPot Lottery",
+  description: "BlinkPot lottery operations console powered by Solana",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",

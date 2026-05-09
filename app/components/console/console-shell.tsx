@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Tabs } from "@heroui/react";
 import {
   ConsoleProvider,
   useConsole,
@@ -50,22 +51,21 @@ function TabNav() {
     return true;
   });
   return (
-    <nav className="flex flex-wrap gap-1 border-b border-border-low pb-2 text-xs">
-      {visibleTabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => setActiveTab(tab.id)}
-          className={`rounded-md px-3 py-1.5 font-semibold transition ${
-            activeTab === tab.id
-              ? "bg-primary text-primary-foreground"
-              : "text-muted hover:bg-cream hover:text-foreground"
-          }`}
-        >
-          {tab.label}
-        </button>
-      ))}
-    </nav>
+    <Tabs
+      selectedKey={activeTab}
+      onSelectionChange={(k) => setActiveTab(k as ConsoleTab)}
+    >
+      <Tabs.ListContainer>
+        <Tabs.List aria-label="Console sections">
+          {visibleTabs.map((t) => (
+            <Tabs.Tab key={t.id} id={t.id}>
+              {t.label}
+              <Tabs.Indicator />
+            </Tabs.Tab>
+          ))}
+        </Tabs.List>
+      </Tabs.ListContainer>
+    </Tabs>
   );
 }
 
