@@ -8,6 +8,8 @@ BlinkPot is a fully on-chain daily lottery on Solana. Every ticket sale, draw, p
 - Program ID: `3adopav8gXebmZ7SgUaTYXE77MzdctQiMAkU5xF1zenk`
 - Anchor `0.32.1` · Solana `mainnet` / `devnet` (compile-time gated) · Next.js 16 · React 19
 
+![BlinkPot](public/screenshot.png)
+
 ---
 
 ## Why BlinkPot
