@@ -28,8 +28,8 @@ BlinkPot inverts that model:
 
 ```
                     ┌──────────────┐
-                    │ start_round  │  admin/keeper picks ticket_price + duration
-                    └──────┬───────┘
+                    │ start_round  │  any signer picks ticket_price + duration
+                    └──────┬───────┘  (permissionless)
                            │
                            ▼
                     ┌──────────────┐
@@ -47,15 +47,19 @@ BlinkPot inverts that model:
                     └──────┬───────┘
                            │
                            ▼
-                    ┌──────────────┐  winners claim → payout + soulbound trophy
-                    │  CLAIMABLE   │  losing tickets rent-rebated via PDA close
-                    └──────┬───────┘
-                           │
+                    ┌──────────────────────────────┐
+                    │         CLAIMABLE            │ ◄── claim_winnings()
+                    └──────┬───────────────────────┘     (mints soulbound trophy)
+                           │  admin sweeps the unpaid
+                           │  prize-pool remainder
                            ▼
-                    ┌──────────────┐  unclaimed pool rolls to next round or LP
-                    │ archive_round│
-                    └──────────────┘
+                    ┌──────────────────────────────┐
+                    │   archive_round → ARCHIVED   │ ◄── claim_winnings() still allowed
+                    └──────────────────────────────┘     (remainder routed to LP, or
+                                                          earmarked as next-round seed)
 ```
+
+> **Note.** Claims are accepted in both `Claimable` and `Archived` states — archiving does **not** close the claim window. `archive_round` only transitions the round and routes the prize-pool **remainder** (see below); winners can still claim afterwards. Operators are expected to call `archive_round` after a sensible claim grace period (no on-chain timer enforces this today — see Roadmap).
 
 ### Anti-over-draw: the `PickCounter` mechanism
 
@@ -249,12 +253,12 @@ npm run deploy           # deploy to Cloudflare Workers
 | `update_config` | admin | Tune fees / tier weights / dynamic bonusball |
 | `set_paused` / `set_emergency_mode` | admin | Circuit breakers |
 | `init_trophy_collection` | admin | One-time MPL Core soulbound collection bootstrap |
-| `start_round` | anyone | Open the next round (price + duration + bonusball + optional LP guarantee) |
+| `start_round` | anyone (permissionless) | Open the next round (price + duration + bonusball + optional LP guarantee) |
 | `buy_tickets` | player | Purchase up to 7 tickets/tx with on-chain pick validation |
-| `commit_draw` | anyone | Lock a Switchboard randomness account at `draw_time` |
-| `reveal_draw` | anyone | Settle round: derive winning numbers, compute per-tier per-combo payouts |
-| `claim_winnings` | ticket owner | Pay out, accrue referral win-share, mint soulbound trophy if winning |
-| `archive_round` | anyone | Move unclaimed pool to next round or LP per config |
+| `commit_draw` | anyone (permissionless) | Lock a Switchboard randomness account at `draw_time` |
+| `reveal_draw` | anyone (permissionless) | Settle round: derive winning numbers, compute per-tier per-combo payouts |
+| `claim_winnings` | ticket owner | Pay out, accrue referral win-share, mint soulbound trophy if winning. Allowed in both `Claimable` **and** `Archived` round states |
+| `archive_round` | admin | Sweep the prize-pool remainder to LP or next-round seed; transitions round to `Archived`. Does not close the claim window |
 | `lp_deposit` | LP | Add liquidity (share-accounted) |
 | `lp_initiate_withdraw` / `lp_finalize_withdraw` | LP | Two-step withdrawal |
 | `initialize_referral` | referrer | Open a 2-tier referral PDA |
