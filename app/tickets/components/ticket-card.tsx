@@ -156,7 +156,7 @@ export function TicketCard(props: TicketCardProps) {
           config?.trophyCollection &&
           config.trophyCollection !== PUBKEY_DEFAULT &&
           round && (
-            <div className="mt-1 grid gap-2 rounded-lg border border-warning-200 bg-warning-50/50 p-2 dark:border-warning-900/40 dark:bg-warning-950/20">
+            <div className="mt-1 grid gap-2 rounded-lg border border-warning-200 bg-warning-50/50 p-2 dark:border-warning-900/40 dark:bg-warning-950/20 items-center justify-center">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-warning-700 dark:text-warning-400">
                   Soulbound trophy
@@ -170,7 +170,7 @@ export function TicketCard(props: TicketCardProps) {
               <img
                 src={`/api/trophy-image/${ticket.data.roundId}/${ticket.data.owner}/${ticket.data.ticketIndex}`}
                 alt={`Round ${ticket.data.roundId} trophy`}
-                className="aspect-[5/6] w-full rounded-md bg-default-50 object-cover"
+                className="w-64 h-64 centered rounded-md object-cover"
               />
             </div>
           )}
