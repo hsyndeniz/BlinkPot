@@ -12,6 +12,7 @@ import { useIsAdmin } from "../../lib/lottery/admin";
 import { ActivityFeedPanel } from "./activity/activity-feed-panel";
 import { ConfigEditorPanel } from "./admin/config-editor-panel";
 import { ConfigOverviewPanel } from "./admin/config-overview-panel";
+import { InitTrophyCollectionPanel } from "./admin/init-trophy-collection-panel";
 import { PauseEmergencyToggles } from "./admin/pause-emergency-toggles";
 import { EmergencyBanner } from "./banners/emergency-banner";
 import { PauseBanner } from "./banners/pause-banner";
@@ -102,6 +103,7 @@ function AdminTab() {
     <PanelGroup>
       <ConfigOverviewPanel />
       <PauseEmergencyToggles />
+      <InitTrophyCollectionPanel />
       <ConfigEditorPanel />
     </PanelGroup>
   );

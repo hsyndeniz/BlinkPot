@@ -1,7 +1,7 @@
 [package]
 name = "lottery"
 version = "0.1.0"
-description = "Megapot-style daily lottery on Solana with Switchboard On-Demand randomness"
+description = "Daily lottery on Solana with Switchboard On-Demand randomness"
 edition = "2021"
 
 [lib]
@@ -29,6 +29,7 @@ devnet = []
 anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 anchor-spl = { version = "0.32.1", features = ["token"] }
 switchboard-on-demand = "0.12.1"
+mpl-core = { version = "0.11.2", default-features = false, features = ["anchor"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

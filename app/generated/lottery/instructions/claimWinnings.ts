@@ -65,8 +65,13 @@ export type ClaimWinningsInstruction<
   TAccountWinnerTokenAccount extends string | AccountMeta<string> = string,
   TAccountReferrerAccount extends string | AccountMeta<string> = string,
   TAccountParentReferrerAccount extends string | AccountMeta<string> = string,
+  TAccountTrophyAsset extends string | AccountMeta<string> = string,
+  TAccountTrophyCollectionAccount extends string | AccountMeta<string> = string,
+  TAccountMplCoreProgram extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  TAccountSystemProgram extends string | AccountMeta<string> =
+    "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -106,9 +111,22 @@ export type ClaimWinningsInstruction<
       TAccountParentReferrerAccount extends string
         ? WritableAccount<TAccountParentReferrerAccount>
         : TAccountParentReferrerAccount,
+      TAccountTrophyAsset extends string
+        ? WritableSignerAccount<TAccountTrophyAsset> &
+            AccountSignerMeta<TAccountTrophyAsset>
+        : TAccountTrophyAsset,
+      TAccountTrophyCollectionAccount extends string
+        ? WritableAccount<TAccountTrophyCollectionAccount>
+        : TAccountTrophyCollectionAccount,
+      TAccountMplCoreProgram extends string
+        ? ReadonlyAccount<TAccountMplCoreProgram>
+        : TAccountMplCoreProgram,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
+      TAccountSystemProgram extends string
+        ? ReadonlyAccount<TAccountSystemProgram>
+        : TAccountSystemProgram,
       ...TRemainingAccounts,
     ]
   >;
@@ -154,7 +172,11 @@ export type ClaimWinningsAsyncInput<
   TAccountWinnerTokenAccount extends string = string,
   TAccountReferrerAccount extends string = string,
   TAccountParentReferrerAccount extends string = string,
+  TAccountTrophyAsset extends string = string,
+  TAccountTrophyCollectionAccount extends string = string,
+  TAccountMplCoreProgram extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountSystemProgram extends string = string,
 > = {
   owner: TransactionSigner<TAccountOwner>;
   config?: Address<TAccountConfig>;
@@ -173,7 +195,21 @@ export type ClaimWinningsAsyncInput<
   winnerTokenAccount: Address<TAccountWinnerTokenAccount>;
   referrerAccount?: Address<TAccountReferrerAccount>;
   parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
+  /**
+   * Fresh keypair allocating the new trophy asset. Required when
+   * `config.trophy_collection` is initialized; absent otherwise.
+   * Validated against `config.trophy_collection` in the handler.
+   */
+  trophyAsset?: TransactionSigner<TAccountTrophyAsset>;
+  /**
+   * `create_v2` CPI mutates the collection's plugin counters, so it's
+   * passed as `mut`.
+   */
+  trophyCollectionAccount?: Address<TAccountTrophyCollectionAccount>;
+  /** program ID inside the handler. */
+  mplCoreProgram?: Address<TAccountMplCoreProgram>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  systemProgram?: Address<TAccountSystemProgram>;
 };
 
 export async function getClaimWinningsInstructionAsync<
@@ -188,7 +224,11 @@ export async function getClaimWinningsInstructionAsync<
   TAccountWinnerTokenAccount extends string,
   TAccountReferrerAccount extends string,
   TAccountParentReferrerAccount extends string,
+  TAccountTrophyAsset extends string,
+  TAccountTrophyCollectionAccount extends string,
+  TAccountMplCoreProgram extends string,
   TAccountTokenProgram extends string,
+  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
   input: ClaimWinningsAsyncInput<
@@ -203,7 +243,11 @@ export async function getClaimWinningsInstructionAsync<
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountTokenProgram
+    TAccountTrophyAsset,
+    TAccountTrophyCollectionAccount,
+    TAccountMplCoreProgram,
+    TAccountTokenProgram,
+    TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -220,7 +264,11 @@ export async function getClaimWinningsInstructionAsync<
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountTokenProgram
+    TAccountTrophyAsset,
+    TAccountTrophyCollectionAccount,
+    TAccountMplCoreProgram,
+    TAccountTokenProgram,
+    TAccountSystemProgram
   >
 > {
   // Program address.
@@ -248,7 +296,14 @@ export async function getClaimWinningsInstructionAsync<
       value: input.parentReferrerAccount ?? null,
       isWritable: true,
     },
+    trophyAsset: { value: input.trophyAsset ?? null, isWritable: true },
+    trophyCollectionAccount: {
+      value: input.trophyCollectionAccount ?? null,
+      isWritable: true,
+    },
+    mplCoreProgram: { value: input.mplCoreProgram ?? null, isWritable: false },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -271,6 +326,10 @@ export async function getClaimWinningsInstructionAsync<
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
@@ -286,7 +345,11 @@ export async function getClaimWinningsInstructionAsync<
       getAccountMeta(accounts.winnerTokenAccount),
       getAccountMeta(accounts.referrerAccount),
       getAccountMeta(accounts.parentReferrerAccount),
+      getAccountMeta(accounts.trophyAsset),
+      getAccountMeta(accounts.trophyCollectionAccount),
+      getAccountMeta(accounts.mplCoreProgram),
       getAccountMeta(accounts.tokenProgram),
+      getAccountMeta(accounts.systemProgram),
     ],
     data: getClaimWinningsInstructionDataEncoder().encode({}),
     programAddress,
@@ -303,7 +366,11 @@ export async function getClaimWinningsInstructionAsync<
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountTokenProgram
+    TAccountTrophyAsset,
+    TAccountTrophyCollectionAccount,
+    TAccountMplCoreProgram,
+    TAccountTokenProgram,
+    TAccountSystemProgram
   >);
 }
 
@@ -319,7 +386,11 @@ export type ClaimWinningsInput<
   TAccountWinnerTokenAccount extends string = string,
   TAccountReferrerAccount extends string = string,
   TAccountParentReferrerAccount extends string = string,
+  TAccountTrophyAsset extends string = string,
+  TAccountTrophyCollectionAccount extends string = string,
+  TAccountMplCoreProgram extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountSystemProgram extends string = string,
 > = {
   owner: TransactionSigner<TAccountOwner>;
   config: Address<TAccountConfig>;
@@ -338,7 +409,21 @@ export type ClaimWinningsInput<
   winnerTokenAccount: Address<TAccountWinnerTokenAccount>;
   referrerAccount?: Address<TAccountReferrerAccount>;
   parentReferrerAccount?: Address<TAccountParentReferrerAccount>;
+  /**
+   * Fresh keypair allocating the new trophy asset. Required when
+   * `config.trophy_collection` is initialized; absent otherwise.
+   * Validated against `config.trophy_collection` in the handler.
+   */
+  trophyAsset?: TransactionSigner<TAccountTrophyAsset>;
+  /**
+   * `create_v2` CPI mutates the collection's plugin counters, so it's
+   * passed as `mut`.
+   */
+  trophyCollectionAccount?: Address<TAccountTrophyCollectionAccount>;
+  /** program ID inside the handler. */
+  mplCoreProgram?: Address<TAccountMplCoreProgram>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  systemProgram?: Address<TAccountSystemProgram>;
 };
 
 export function getClaimWinningsInstruction<
@@ -353,7 +438,11 @@ export function getClaimWinningsInstruction<
   TAccountWinnerTokenAccount extends string,
   TAccountReferrerAccount extends string,
   TAccountParentReferrerAccount extends string,
+  TAccountTrophyAsset extends string,
+  TAccountTrophyCollectionAccount extends string,
+  TAccountMplCoreProgram extends string,
   TAccountTokenProgram extends string,
+  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof LOTTERY_PROGRAM_ADDRESS,
 >(
   input: ClaimWinningsInput<
@@ -368,7 +457,11 @@ export function getClaimWinningsInstruction<
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountTokenProgram
+    TAccountTrophyAsset,
+    TAccountTrophyCollectionAccount,
+    TAccountMplCoreProgram,
+    TAccountTokenProgram,
+    TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): ClaimWinningsInstruction<
@@ -384,7 +477,11 @@ export function getClaimWinningsInstruction<
   TAccountWinnerTokenAccount,
   TAccountReferrerAccount,
   TAccountParentReferrerAccount,
-  TAccountTokenProgram
+  TAccountTrophyAsset,
+  TAccountTrophyCollectionAccount,
+  TAccountMplCoreProgram,
+  TAccountTokenProgram,
+  TAccountSystemProgram
 > {
   // Program address.
   const programAddress = config?.programAddress ?? LOTTERY_PROGRAM_ADDRESS;
@@ -411,7 +508,14 @@ export function getClaimWinningsInstruction<
       value: input.parentReferrerAccount ?? null,
       isWritable: true,
     },
+    trophyAsset: { value: input.trophyAsset ?? null, isWritable: true },
+    trophyCollectionAccount: {
+      value: input.trophyCollectionAccount ?? null,
+      isWritable: true,
+    },
+    mplCoreProgram: { value: input.mplCoreProgram ?? null, isWritable: false },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -422,6 +526,10 @@ export function getClaimWinningsInstruction<
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
@@ -438,7 +546,11 @@ export function getClaimWinningsInstruction<
       getAccountMeta(accounts.winnerTokenAccount),
       getAccountMeta(accounts.referrerAccount),
       getAccountMeta(accounts.parentReferrerAccount),
+      getAccountMeta(accounts.trophyAsset),
+      getAccountMeta(accounts.trophyCollectionAccount),
+      getAccountMeta(accounts.mplCoreProgram),
       getAccountMeta(accounts.tokenProgram),
+      getAccountMeta(accounts.systemProgram),
     ],
     data: getClaimWinningsInstructionDataEncoder().encode({}),
     programAddress,
@@ -455,7 +567,11 @@ export function getClaimWinningsInstruction<
     TAccountWinnerTokenAccount,
     TAccountReferrerAccount,
     TAccountParentReferrerAccount,
-    TAccountTokenProgram
+    TAccountTrophyAsset,
+    TAccountTrophyCollectionAccount,
+    TAccountMplCoreProgram,
+    TAccountTokenProgram,
+    TAccountSystemProgram
   >);
 }
 
@@ -482,7 +598,21 @@ export type ParsedClaimWinningsInstruction<
     winnerTokenAccount: TAccountMetas[8];
     referrerAccount?: TAccountMetas[9] | undefined;
     parentReferrerAccount?: TAccountMetas[10] | undefined;
-    tokenProgram: TAccountMetas[11];
+    /**
+     * Fresh keypair allocating the new trophy asset. Required when
+     * `config.trophy_collection` is initialized; absent otherwise.
+     * Validated against `config.trophy_collection` in the handler.
+     */
+    trophyAsset?: TAccountMetas[11] | undefined;
+    /**
+     * `create_v2` CPI mutates the collection's plugin counters, so it's
+     * passed as `mut`.
+     */
+    trophyCollectionAccount?: TAccountMetas[12] | undefined;
+    /** program ID inside the handler. */
+    mplCoreProgram?: TAccountMetas[13] | undefined;
+    tokenProgram: TAccountMetas[14];
+    systemProgram: TAccountMetas[15];
   };
   data: ClaimWinningsInstructionData;
 };
@@ -495,7 +625,7 @@ export function parseClaimWinningsInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedClaimWinningsInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 12) {
+  if (instruction.accounts.length < 16) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -525,7 +655,11 @@ export function parseClaimWinningsInstruction<
       winnerTokenAccount: getNextAccount(),
       referrerAccount: getNextOptionalAccount(),
       parentReferrerAccount: getNextOptionalAccount(),
+      trophyAsset: getNextOptionalAccount(),
+      trophyCollectionAccount: getNextOptionalAccount(),
+      mplCoreProgram: getNextOptionalAccount(),
       tokenProgram: getNextAccount(),
+      systemProgram: getNextAccount(),
     },
     data: getClaimWinningsInstructionDataDecoder().decode(instruction.data),
   };

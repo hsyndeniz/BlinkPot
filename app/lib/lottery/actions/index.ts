@@ -28,6 +28,8 @@ export { useCancelSubscription } from "./use-cancel-subscription";
 export { useEmergencyRefundTicket } from "./use-emergency-refund-ticket";
 export { useEmergencyLpWithdraw } from "./use-emergency-lp-withdraw";
 
+export { useInitTrophyCollection } from "./use-init-trophy-collection";
+
 export type {
   ActionTriggerState,
   LotteryActionContext,

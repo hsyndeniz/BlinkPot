@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Card, Chip } from "@heroui/react";
-import { Check, Cup, Xmark } from "@gravity-ui/icons";
+import { Check, Cup, Lock, Xmark } from "@gravity-ui/icons";
 import type { Address, Account } from "@solana/kit";
 import { RoundState, type Round, type Ticket } from "../../generated/lottery";
 import { useClaimWinnings } from "../../lib/lottery/actions";
@@ -12,6 +12,8 @@ import {
 } from "../../lib/lottery/tokens";
 import { useConfig } from "../../lib/lottery/accounts";
 import { isWinningTicket } from "../../lib/lottery/picks";
+
+const PUBKEY_DEFAULT = "11111111111111111111111111111111";
 
 type TicketCardProps = {
   ticket: Account<Ticket>;
@@ -147,6 +149,31 @@ export function TicketCard(props: TicketCardProps) {
             Claim · {payoutLabel}
           </Button>
         )}
+
+        {claimed &&
+          outcome?.winning &&
+          hasPayout &&
+          config?.trophyCollection &&
+          config.trophyCollection !== PUBKEY_DEFAULT &&
+          round && (
+            <div className="mt-1 grid gap-2 rounded-lg border border-warning-200 bg-warning-50/50 p-2 dark:border-warning-900/40 dark:bg-warning-950/20">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-warning-700 dark:text-warning-400">
+                  Soulbound trophy
+                </span>
+                <Chip size="sm" color="warning" variant="secondary">
+                  <Lock />
+                  <Chip.Label>MPL Core</Chip.Label>
+                </Chip>
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/trophy-image/${ticket.data.roundId}/${ticket.data.owner}/${ticket.data.ticketIndex}`}
+                alt={`Round ${ticket.data.roundId} trophy`}
+                className="aspect-[5/6] w-full rounded-md bg-default-50 object-cover"
+              />
+            </div>
+          )}
       </Card.Content>
     </Card>
   );

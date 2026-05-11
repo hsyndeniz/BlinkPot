@@ -19,7 +19,7 @@ pub const PICK_COUNTER_SEED: &[u8] = b"pick_counter";
 pub const BPS_DENOM: u64 = 10_000;
 pub const TIER_COUNT: usize = 12;
 
-/// Megapot premium-allocation defaults. Sum = 10_000 bps.
+/// Default premium-allocation tier weights. Sum = 10_000 bps.
 /// Tier index = matches * 2 + (1 if has_bonus else 0).
 ///   tier 0  (0, no)  : non-winning
 ///   tier 1  (0, yes) : 0 bps  (winning, min only)
@@ -33,11 +33,11 @@ pub const TIER_COUNT: usize = 12;
 ///   tier 9  (4, yes) : 600
 ///   tier 10 (5, no)  : 600
 ///   tier 11 (5, yes) : 4000  (jackpot)
-pub const MEGAPOT_TIER_PREMIUM_WEIGHT_BPS: [u16; TIER_COUNT] =
+pub const DEFAULT_TIER_PREMIUM_WEIGHT_BPS: [u16; TIER_COUNT] =
     [0, 0, 0, 1_200, 0, 1_200, 1_200, 600, 600, 600, 600, 4_000];
 
-/// Megapot winning-tier flags. `false` = ticket cannot be claimed.
-pub const MEGAPOT_TIER_IS_WINNING: [bool; TIER_COUNT] = [
+/// Default winning-tier flags. `false` = ticket cannot be claimed.
+pub const DEFAULT_TIER_IS_WINNING: [bool; TIER_COUNT] = [
     false, // 0 — no matches, no bonus
     true,  // 1 — bonusball only
     false, // 2 — 1 normal, no bonus
@@ -81,6 +81,12 @@ pub const MIN_PRIZE_POOL_BPS: u16 = 5_000;
 
 /// Maximum BPS of LP NAV that may be reserved as a per-round guaranteed prize pool.
 pub const MAX_GUARANTEE_PER_ROUND_BPS_CAP: u16 = 5_000;
+
+/// URL prefix for trophy metadata. Format: `{prefix}/{round_id}/{winner_addr}`.
+/// Hardcoded so external services (wallets, marketplaces, DAS API) can resolve
+/// trophy assets without on-chain config lookups. Update for your deployment
+/// before publishing the program.
+pub const TROPHY_METADATA_URI_PREFIX: &str = "https://blinkpot.io/api/trophy-metadata";
 
 pub fn switchboard_program_id() -> Pubkey {
     #[cfg(feature = "devnet")]

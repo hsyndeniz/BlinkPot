@@ -43,7 +43,7 @@ pub struct ConfigParams {
     /// Guaranteed minimum payout per winner per tier (in payment-mint base units).
     /// 0 = no minimum for that tier.
     pub tier_min_payout_per_winner: [u64; TIER_COUNT],
-    /// Whether a tier is claimable. Megapot defaults: tier 0 (no match) and tier 2
+    /// Whether a tier is claimable. the defaults above: tier 0 (no match) and tier 2
     /// (1 normal, no bonus) are non-winning; everything else is winning even if its
     /// premium weight is 0 (e.g. "bonusball only" earns just the guaranteed minimum).
     pub tier_is_winning: [bool; TIER_COUNT],
@@ -107,6 +107,12 @@ pub struct Config {
     pub dynamic_bonusball_enabled: bool,
     pub bonusball_base: u8,
     pub bonusball_pool_step_units: u64,
+
+    /// MPL Core collection that owns the soulbound winner-trophy assets.
+    /// `Pubkey::default()` until `init_trophy_collection` runs; once set, every
+    /// successful `claim_winnings` mints a permanently-soulbound Core asset
+    /// into this collection. Pinned for the program's lifetime.
+    pub trophy_collection: Pubkey,
 }
 
 impl Config {
@@ -125,7 +131,8 @@ impl Config {
         + 2                             // premium_min_allocation_bps
         + 1 + 32                        // untaken_tier_destination + enum padding
         + 1 + 1 + 8                     // dynamic_bonusball + base + step
-        + 64;                           // forward-compatible padding
+        + 32                            // trophy_collection
+        + 32;                           // forward-compatible padding (was 64, claimed 32)
 
     pub fn apply_params(&mut self, params: &ConfigParams) {
         self.default_ticket_price = params.default_ticket_price;

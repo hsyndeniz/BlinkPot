@@ -28,6 +28,7 @@ import {
   parseEnterRoundEmergencyInstruction,
   parseInitializeConfigInstruction,
   parseInitializeReferralInstruction,
+  parseInitTrophyCollectionInstruction,
   parseLpDepositInstruction,
   parseLpFinalizeWithdrawInstruction,
   parseLpInitiateWithdrawInstruction,
@@ -49,6 +50,7 @@ import {
   type ParsedEnterRoundEmergencyInstruction,
   type ParsedInitializeConfigInstruction,
   type ParsedInitializeReferralInstruction,
+  type ParsedInitTrophyCollectionInstruction,
   type ParsedLpDepositInstruction,
   type ParsedLpFinalizeWithdrawInstruction,
   type ParsedLpInitiateWithdrawInstruction,
@@ -62,7 +64,7 @@ import {
 } from "../instructions";
 
 export const LOTTERY_PROGRAM_ADDRESS =
-  "5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r" as Address<"5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r">;
+  "3adopav8gXebmZ7SgUaTYXE77MzdctQiMAkU5xF1zenk" as Address<"3adopav8gXebmZ7SgUaTYXE77MzdctQiMAkU5xF1zenk">;
 
 export enum LotteryAccount {
   BuyerEntry,
@@ -206,6 +208,7 @@ export enum LotteryInstruction {
   EmergencyLpWithdraw,
   EmergencyRefundTicket,
   EnterRoundEmergency,
+  InitTrophyCollection,
   InitializeConfig,
   InitializeReferral,
   LpDeposit,
@@ -322,6 +325,17 @@ export function identifyLotteryInstruction(
     )
   ) {
     return LotteryInstruction.EnterRoundEmergency;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([65, 27, 124, 54, 184, 68, 115, 176]),
+      ),
+      0,
+    )
+  ) {
+    return LotteryInstruction.InitTrophyCollection;
   }
   if (
     containsBytes(
@@ -461,7 +475,7 @@ export function identifyLotteryInstruction(
 }
 
 export type ParsedLotteryInstruction<
-  TProgram extends string = "5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r",
+  TProgram extends string = "3adopav8gXebmZ7SgUaTYXE77MzdctQiMAkU5xF1zenk",
 > =
   | ({
       instructionType: LotteryInstruction.ArchiveRound;
@@ -490,6 +504,9 @@ export type ParsedLotteryInstruction<
   | ({
       instructionType: LotteryInstruction.EnterRoundEmergency;
     } & ParsedEnterRoundEmergencyInstruction<TProgram>)
+  | ({
+      instructionType: LotteryInstruction.InitTrophyCollection;
+    } & ParsedInitTrophyCollectionInstruction<TProgram>)
   | ({
       instructionType: LotteryInstruction.InitializeConfig;
     } & ParsedInitializeConfigInstruction<TProgram>)
@@ -593,6 +610,13 @@ export function parseLotteryInstruction<TProgram extends string>(
       return {
         instructionType: LotteryInstruction.EnterRoundEmergency,
         ...parseEnterRoundEmergencyInstruction(instruction),
+      };
+    }
+    case LotteryInstruction.InitTrophyCollection: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: LotteryInstruction.InitTrophyCollection,
+        ...parseInitTrophyCollectionInstruction(instruction),
       };
     }
     case LotteryInstruction.InitializeConfig: {

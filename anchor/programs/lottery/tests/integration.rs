@@ -100,9 +100,9 @@ fn default_params() -> ConfigParams {
         referral_win_share_first_bps: 800,
         referral_win_share_second_bps: 200,
         lp_pool_cap: 0,
-        tier_premium_weight_bps: MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
+        tier_premium_weight_bps: DEFAULT_TIER_PREMIUM_WEIGHT_BPS,
         tier_min_payout_per_winner: [0u64; TIER_COUNT],
-        tier_is_winning: MEGAPOT_TIER_IS_WINNING,
+        tier_is_winning: DEFAULT_TIER_IS_WINNING,
         premium_min_allocation_bps: 2_000,
         untaken_tier_destination: UntakenTierDestination::NextRound,
         dynamic_bonusball_enabled: false,
@@ -343,7 +343,7 @@ fn force_claimable(ctx: &mut Ctx, round_pda: Pubkey, winning_normals: [u8; 5], w
         round.normal_ball_max,
         round.bonusball_max,
         &round.tier_is_winning,
-        &MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
+        &DEFAULT_TIER_PREMIUM_WEIGHT_BPS,
         &[0u64; TIER_COUNT],
         2_000,
     )
@@ -394,7 +394,14 @@ fn claim(ctx: &mut Ctx, owner: &Keypair, owner_ata: Pubkey, round: Pubkey, ticke
         winner_token_account: owner_ata,
         referrer_account: None,
         parent_referrer_account: None,
+        // Trophy mint is gated by `config.trophy_collection != Pubkey::default()`,
+        // so this test path (which never runs `init_trophy_collection`) leaves
+        // them all None and skips the CPI.
+        trophy_asset: None,
+        trophy_collection_account: None,
+        mpl_core_program: None,
         token_program: anchor_spl::token::ID,
+        system_program: anchor_lang::system_program::ID,
     }
     .to_account_metas(None);
     let ix = Instruction {

@@ -162,3 +162,16 @@ pub struct RoundArchived {
     pub rolled_to_lp: u64,
     pub rolled_to_next_round: u64,
 }
+
+#[event]
+pub struct TrophyCollectionInitialized {
+    pub collection: Pubkey,
+}
+
+#[event]
+pub struct TrophyMinted {
+    pub round_id: u64,
+    pub winner: Pubkey,
+    pub asset: Pubkey,
+    pub tier: u8,
+}

@@ -104,6 +104,13 @@ export type Config = {
   dynamicBonusballEnabled: boolean;
   bonusballBase: number;
   bonusballPoolStepUnits: bigint;
+  /**
+   * MPL Core collection that owns the soulbound winner-trophy assets.
+   * `Pubkey::default()` until `init_trophy_collection` runs; once set, every
+   * successful `claim_winnings` mints a permanently-soulbound Core asset
+   * into this collection. Pinned for the program's lifetime.
+   */
+  trophyCollection: Address;
 };
 
 export type ConfigArgs = {
@@ -148,6 +155,13 @@ export type ConfigArgs = {
   dynamicBonusballEnabled: boolean;
   bonusballBase: number;
   bonusballPoolStepUnits: number | bigint;
+  /**
+   * MPL Core collection that owns the soulbound winner-trophy assets.
+   * `Pubkey::default()` until `init_trophy_collection` runs; once set, every
+   * successful `claim_winnings` mints a permanently-soulbound Core asset
+   * into this collection. Pinned for the program's lifetime.
+   */
+  trophyCollection: Address;
 };
 
 /** Gets the encoder for {@link ConfigArgs} account data. */
@@ -187,6 +201,7 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
       ["dynamicBonusballEnabled", getBooleanEncoder()],
       ["bonusballBase", getU8Encoder()],
       ["bonusballPoolStepUnits", getU64Encoder()],
+      ["trophyCollection", getAddressEncoder()],
     ]),
     (value) => ({ ...value, discriminator: CONFIG_DISCRIMINATOR }),
   );
@@ -225,6 +240,7 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
     ["dynamicBonusballEnabled", getBooleanDecoder()],
     ["bonusballBase", getU8Decoder()],
     ["bonusballPoolStepUnits", getU64Decoder()],
+    ["trophyCollection", getAddressDecoder()],
   ]);
 }
 
@@ -287,5 +303,5 @@ export async function fetchAllMaybeConfig(
 }
 
 export function getConfigSize(): number {
-  return 277;
+  return 309;
 }

@@ -46,3 +46,13 @@ next-env.d.ts
 
 # solana local validator
 test-ledger/
+
+# OpenNext
+.open-next
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+
+!.env.example

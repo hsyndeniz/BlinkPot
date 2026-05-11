@@ -124,6 +124,12 @@ export const LOTTERY_ERROR__INVALID_TOKEN_MINT = 0x17a4; // 6052
 export const LOTTERY_ERROR__ROUND_NOT_EMERGENCY = 0x17a5; // 6053
 /** InvalidPickCounter: Pick counter PDA does not match the ticket's pick */
 export const LOTTERY_ERROR__INVALID_PICK_COUNTER = 0x17a6; // 6054
+/** TrophyCollectionAlreadyInitialized: Trophy collection already initialized */
+export const LOTTERY_ERROR__TROPHY_COLLECTION_ALREADY_INITIALIZED = 0x17a7; // 6055
+/** TrophyAccountsRequired: Trophy mint requires trophy_asset, trophy_collection, mpl_core_program, and system_program accounts */
+export const LOTTERY_ERROR__TROPHY_ACCOUNTS_REQUIRED = 0x17a8; // 6056
+/** InvalidTrophyCollection: Trophy collection address does not match config.trophy_collection */
+export const LOTTERY_ERROR__INVALID_TROPHY_COLLECTION = 0x17a9; // 6057
 
 export type LotteryError =
   | typeof LOTTERY_ERROR__BONUSBALL_OUT_OF_RANGE
@@ -142,6 +148,7 @@ export type LotteryError =
   | typeof LOTTERY_ERROR__INVALID_TICKET_PRICE
   | typeof LOTTERY_ERROR__INVALID_TIER_WEIGHT_BPS
   | typeof LOTTERY_ERROR__INVALID_TOKEN_MINT
+  | typeof LOTTERY_ERROR__INVALID_TROPHY_COLLECTION
   | typeof LOTTERY_ERROR__LP_CAP_EXCEEDED
   | typeof LOTTERY_ERROR__LP_GUARANTEE_UNAVAILABLE
   | typeof LOTTERY_ERROR__LP_INSUFFICIENT_SHARES
@@ -180,6 +187,8 @@ export type LotteryError =
   | typeof LOTTERY_ERROR__SUBSCRIPTION_INACTIVE
   | typeof LOTTERY_ERROR__SUBSCRIPTION_PRICE_CHANGED
   | typeof LOTTERY_ERROR__TICKET_ALREADY_CLAIMED
+  | typeof LOTTERY_ERROR__TROPHY_ACCOUNTS_REQUIRED
+  | typeof LOTTERY_ERROR__TROPHY_COLLECTION_ALREADY_INITIALIZED
   | typeof LOTTERY_ERROR__UNAUTHORIZED;
 
 let lotteryErrorMessages: Record<LotteryError, string> | undefined;
@@ -201,6 +210,7 @@ if (process.env.NODE_ENV !== "production") {
     [LOTTERY_ERROR__INVALID_TICKET_PRICE]: `Ticket price must be positive`,
     [LOTTERY_ERROR__INVALID_TIER_WEIGHT_BPS]: `Tier weight basis points sum must equal 10_000`,
     [LOTTERY_ERROR__INVALID_TOKEN_MINT]: `Token mint mismatch`,
+    [LOTTERY_ERROR__INVALID_TROPHY_COLLECTION]: `Trophy collection address does not match config.trophy_collection`,
     [LOTTERY_ERROR__LP_CAP_EXCEEDED]: `LP cap would be exceeded`,
     [LOTTERY_ERROR__LP_GUARANTEE_UNAVAILABLE]: `Insufficient available LP liquidity for round guarantee`,
     [LOTTERY_ERROR__LP_INSUFFICIENT_SHARES]: `LP position has insufficient shares`,
@@ -239,6 +249,8 @@ if (process.env.NODE_ENV !== "production") {
     [LOTTERY_ERROR__SUBSCRIPTION_INACTIVE]: `Subscription is inactive or expired`,
     [LOTTERY_ERROR__SUBSCRIPTION_PRICE_CHANGED]: `Subscription ticket price changed`,
     [LOTTERY_ERROR__TICKET_ALREADY_CLAIMED]: `Ticket already claimed`,
+    [LOTTERY_ERROR__TROPHY_ACCOUNTS_REQUIRED]: `Trophy mint requires trophy_asset, trophy_collection, mpl_core_program, and system_program accounts`,
+    [LOTTERY_ERROR__TROPHY_COLLECTION_ALREADY_INITIALIZED]: `Trophy collection already initialized`,
     [LOTTERY_ERROR__UNAUTHORIZED]: `Caller is not the configured admin`,
   };
 }

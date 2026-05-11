@@ -17,6 +17,7 @@ export * from "./emergencyRefundTicket";
 export * from "./enterRoundEmergency";
 export * from "./initializeConfig";
 export * from "./initializeReferral";
+export * from "./initTrophyCollection";
 export * from "./lpDeposit";
 export * from "./lpFinalizeWithdraw";
 export * from "./lpInitiateWithdraw";

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="sol" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#9945FF"></stop>
+      <stop offset="55%" stop-color="#5B6BE1"></stop>
+      <stop offset="100%" stop-color="#14F195"></stop>
+    </linearGradient>
+    <linearGradient id="solv" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#14F195"></stop>
+      <stop offset="100%" stop-color="#9945FF"></stop>
+    </linearGradient>
+    <radialGradient id="tile" cx="30%" cy="25%" r="80%">
+      <stop offset="0%" stop-color="#1a1d31"></stop>
+      <stop offset="70%" stop-color="#0A0B14"></stop>
+    </radialGradient>
+    <radialGradient id="pot" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1c2040"></stop>
+      <stop offset="100%" stop-color="#0A0B14"></stop>
+    </radialGradient>
+  </defs>
+  
+  <rect x="0" y="0" width="1024" height="1024" rx="229" ry="229" fill="url(#tile)"></rect>
+  <rect x="0.5" y="0.5" width="1023" height="1023" rx="228.5" ry="228.5" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"></rect>
+  
+  <g transform="translate(170,170) scale(6.84)">
+    <circle cx="50" cy="50" r="44" fill="url(#pot)" stroke="rgba(255,255,255,0.10)" stroke-width="1"></circle>
+    <path d="M 50 6 A 44 44 0 0 1 94 50" fill="none" stroke="url(#sol)" stroke-width="3" stroke-linecap="round"></path>
+    <path d="M 56 22 L 36 56 L 49 56 L 44 78 L 64 44 L 51 44 L 56 22 Z" fill="url(#solv)"></path>
+  </g>
+</svg>

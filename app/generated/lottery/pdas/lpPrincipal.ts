@@ -23,7 +23,7 @@ export async function findLpPrincipalPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r" as Address<"5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r">,
+    programAddress = "3adopav8gXebmZ7SgUaTYXE77MzdctQiMAkU5xF1zenk" as Address<"3adopav8gXebmZ7SgUaTYXE77MzdctQiMAkU5xF1zenk">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

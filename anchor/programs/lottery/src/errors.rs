@@ -122,4 +122,11 @@ pub enum LotteryError {
 
     #[msg("Pick counter PDA does not match the ticket's pick")]
     InvalidPickCounter,
+
+    #[msg("Trophy collection already initialized")]
+    TrophyCollectionAlreadyInitialized,
+    #[msg("Trophy mint requires trophy_asset, trophy_collection, mpl_core_program, and system_program accounts")]
+    TrophyAccountsRequired,
+    #[msg("Trophy collection address does not match config.trophy_collection")]
+    InvalidTrophyCollection,
 }

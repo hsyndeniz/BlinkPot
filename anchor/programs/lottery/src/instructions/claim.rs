@@ -1,12 +1,13 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
+use mpl_core::{instructions::CreateV2CpiBuilder, ID as MPL_CORE_ID};
 
 use crate::constants::{
     CONFIG_SEED, PICK_COUNTER_SEED, PRIZE_VAULT_AUTHORITY_SEED, PRIZE_VAULT_TOKEN_SEED,
-    REFERRAL_SEED, ROUND_SEED, TICKET_SEED,
+    REFERRAL_SEED, ROUND_SEED, TICKET_SEED, TROPHY_METADATA_URI_PREFIX,
 };
 use crate::errors::LotteryError;
-use crate::events::WinningsClaimed;
+use crate::events::{TrophyMinted, WinningsClaimed};
 use crate::math::{bps_amount, count_matches, tier_for_match};
 use crate::state::config::Config;
 use crate::state::pick_counter::PickCounter;
@@ -95,7 +96,24 @@ pub struct ClaimWinnings<'info> {
     )]
     pub parent_referrer_account: Option<Box<Account<'info, Referral>>>,
 
+    /// Fresh keypair allocating the new trophy asset. Required when
+    /// `config.trophy_collection` is initialized; absent otherwise.
+    /// Validated against `config.trophy_collection` in the handler.
+    #[account(mut)]
+    pub trophy_asset: Option<Signer<'info>>,
+
+    /// CHECK: Must equal `config.trophy_collection` when present. The Core
+    /// `create_v2` CPI mutates the collection's plugin counters, so it's
+    /// passed as `mut`.
+    #[account(mut)]
+    pub trophy_collection_account: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: MPL Core program. Validated against the program's hardcoded
+    /// program ID inside the handler.
+    pub mpl_core_program: Option<UncheckedAccount<'info>>,
+
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
@@ -259,5 +277,81 @@ pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
         referral_first_amount,
         referral_second_amount,
     });
+
+    // ── Trophy mint ────────────────────────────────────────────────────
+    // Mint a soulbound MPL Core asset to the winner. The collection's
+    // `PermanentFreezeDelegate { frozen: true, authority: None }` plugin
+    // (set at `init_trophy_collection` time) makes every minted asset
+    // permanently soulbound — winners can display the trophy in any wallet
+    // but it can never be transferred or thawed.
+    let trophy_collection_pinned = ctx.accounts.config.trophy_collection;
+    if trophy_collection_pinned != Pubkey::default() {
+        let trophy_asset = ctx
+            .accounts
+            .trophy_asset
+            .as_ref()
+            .ok_or(error!(LotteryError::TrophyAccountsRequired))?;
+        let trophy_collection_account = ctx
+            .accounts
+            .trophy_collection_account
+            .as_ref()
+            .ok_or(error!(LotteryError::TrophyAccountsRequired))?;
+        let mpl_core_program = ctx
+            .accounts
+            .mpl_core_program
+            .as_ref()
+            .ok_or(error!(LotteryError::TrophyAccountsRequired))?;
+
+        require_keys_eq!(
+            trophy_collection_account.key(),
+            trophy_collection_pinned,
+            LotteryError::InvalidTrophyCollection
+        );
+        require_keys_eq!(
+            mpl_core_program.key(),
+            MPL_CORE_ID,
+            LotteryError::InvalidTrophyCollection
+        );
+
+        let config_ai = ctx.accounts.config.to_account_info();
+        let owner_ai = ctx.accounts.owner.to_account_info();
+        let trophy_name = format!(
+            "BlinkPot Round {} #{}",
+            round.round_id, ticket.ticket_index
+        );
+        // URL keys the trophy by (round_id, owner, ticket_index) — the same
+        // tuple that derives the Ticket PDA. The metadata route can recompute
+        // picks/tier/payout from on-chain state with no off-chain mapping.
+        let trophy_uri = format!(
+            "{}/{}/{}/{}",
+            TROPHY_METADATA_URI_PREFIX,
+            round.round_id,
+            ctx.accounts.owner.key(),
+            ticket.ticket_index
+        );
+
+        let config_bump = [ctx.accounts.config.bump];
+        let config_seeds: &[&[u8]] = &[CONFIG_SEED, &config_bump];
+        let signers = &[config_seeds];
+
+        CreateV2CpiBuilder::new(&mpl_core_program.to_account_info())
+            .asset(&trophy_asset.to_account_info())
+            .collection(Some(&trophy_collection_account.to_account_info()))
+            .authority(Some(&config_ai))
+            .payer(&owner_ai)
+            .owner(Some(&owner_ai))
+            .system_program(&ctx.accounts.system_program.to_account_info())
+            .name(trophy_name)
+            .uri(trophy_uri)
+            .invoke_signed(signers)?;
+
+        emit!(TrophyMinted {
+            round_id: round.round_id,
+            winner: ctx.accounts.owner.key(),
+            asset: trophy_asset.key(),
+            tier: tier as u8,
+        });
+    }
+
     Ok(())
 }

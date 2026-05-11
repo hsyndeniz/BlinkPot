@@ -14,7 +14,7 @@ use instructions::*;
 use state::config::ConfigParams;
 use state::ticket::TicketPick;
 
-declare_id!("5XEpujFy87sWxVMBj4DasfxZNHdkYftRPs6UN5X95L7r");
+declare_id!("3adopav8gXebmZ7SgUaTYXE77MzdctQiMAkU5xF1zenk");
 
 #[program]
 pub mod lottery {
@@ -129,5 +129,13 @@ pub mod lottery {
 
     pub fn archive_round(ctx: Context<ArchiveRound>) -> Result<()> {
         instructions::round::archive_round(ctx)
+    }
+
+    pub fn init_trophy_collection(
+        ctx: Context<InitTrophyCollection>,
+        name: String,
+        uri: String,
+    ) -> Result<()> {
+        instructions::trophy::init_trophy_collection(ctx, name, uri)
     }
 }

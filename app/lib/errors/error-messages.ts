@@ -8,6 +8,7 @@ import {
   LOTTERY_ERROR__INVALID_CONFIG,
   LOTTERY_ERROR__INVALID_PICK_COUNTER,
   LOTTERY_ERROR__INVALID_PREMIUM_ALLOCATION,
+  LOTTERY_ERROR__INVALID_TROPHY_COLLECTION,
   LOTTERY_ERROR__INVALID_RANDOMNESS_ACCOUNT,
   LOTTERY_ERROR__INVALID_ROUND_DURATION,
   LOTTERY_ERROR__INVALID_SUBSCRIPTION,
@@ -53,6 +54,8 @@ import {
   LOTTERY_ERROR__SUBSCRIPTION_INACTIVE,
   LOTTERY_ERROR__SUBSCRIPTION_PRICE_CHANGED,
   LOTTERY_ERROR__TICKET_ALREADY_CLAIMED,
+  LOTTERY_ERROR__TROPHY_ACCOUNTS_REQUIRED,
+  LOTTERY_ERROR__TROPHY_COLLECTION_ALREADY_INITIALIZED,
   LOTTERY_ERROR__UNAUTHORIZED,
   type LotteryError,
 } from "../../generated/lottery";
@@ -168,6 +171,12 @@ const FRIENDLY: Record<LotteryError, string> = {
     "This action requires the round to be in the Emergency state.",
   [LOTTERY_ERROR__INVALID_PICK_COUNTER]:
     "The pick counter PDA does not match the ticket's pick. The ticket's combo may belong to a different round.",
+  [LOTTERY_ERROR__TROPHY_COLLECTION_ALREADY_INITIALIZED]:
+    "The trophy collection has already been initialized for this deployment.",
+  [LOTTERY_ERROR__TROPHY_ACCOUNTS_REQUIRED]:
+    "Trophy minting needs the trophy asset, collection, and MPL Core program accounts. Reconnect your wallet and retry.",
+  [LOTTERY_ERROR__INVALID_TROPHY_COLLECTION]:
+    "The supplied trophy collection address does not match the on-chain config. The deployment's trophy collection may have been rotated.",
 };
 
 export function getFriendlyLotteryErrorMessage(code: LotteryError): string {

@@ -103,7 +103,7 @@ pub(crate) fn validate_params(params: &ConfigParams) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::{MEGAPOT_TIER_IS_WINNING, MEGAPOT_TIER_PREMIUM_WEIGHT_BPS};
+    use crate::constants::{DEFAULT_TIER_IS_WINNING, DEFAULT_TIER_PREMIUM_WEIGHT_BPS};
     use crate::state::config::UntakenTierDestination;
 
     fn valid_params() -> ConfigParams {
@@ -121,9 +121,9 @@ mod tests {
             referral_win_share_first_bps: 800,
             referral_win_share_second_bps: 200,
             lp_pool_cap: 0,
-            tier_premium_weight_bps: MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
+            tier_premium_weight_bps: DEFAULT_TIER_PREMIUM_WEIGHT_BPS,
             tier_min_payout_per_winner: [0u64; TIER_COUNT],
-            tier_is_winning: MEGAPOT_TIER_IS_WINNING,
+            tier_is_winning: DEFAULT_TIER_IS_WINNING,
             premium_min_allocation_bps: 2_000,
             untaken_tier_destination: UntakenTierDestination::NextRound,
             dynamic_bonusball_enabled: true,
@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_params_accepts_megapot_defaults() {
+    fn validate_params_accepts_defaults() {
         validate_params(&valid_params()).unwrap();
     }
 
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn rejects_minimums_on_non_winning_tier() {
         let mut params = valid_params();
-        // tier 0 is non-winning by Megapot defaults — shouldn't carry a minimum
+        // tier 0 is non-winning by the defaults above — shouldn't carry a minimum
         params.tier_min_payout_per_winner[0] = 1_000_000;
         assert!(validate_params(&params).is_err());
     }

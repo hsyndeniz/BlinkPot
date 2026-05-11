@@ -63,7 +63,7 @@ export type ConfigParams = {
    */
   tierMinPayoutPerWinner: Array<bigint>;
   /**
-   * Whether a tier is claimable. Megapot defaults: tier 0 (no match) and tier 2
+   * Whether a tier is claimable. the defaults above: tier 0 (no match) and tier 2
    * (1 normal, no bonus) are non-winning; everything else is winning even if its
    * premium weight is 0 (e.g. "bonusball only" earns just the guaranteed minimum).
    */
@@ -115,7 +115,7 @@ export type ConfigParamsArgs = {
    */
   tierMinPayoutPerWinner: Array<number | bigint>;
   /**
-   * Whether a tier is claimable. Megapot defaults: tier 0 (no match) and tier 2
+   * Whether a tier is claimable. the defaults above: tier 0 (no match) and tier 2
    * (1 normal, no bonus) are non-winning; everything else is winning even if its
    * premium weight is 0 (e.g. "bonusball only" earns just the guaranteed minimum).
    */

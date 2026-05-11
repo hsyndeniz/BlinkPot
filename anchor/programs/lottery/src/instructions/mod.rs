@@ -7,6 +7,7 @@ pub mod referral;
 pub mod round;
 pub mod subscription;
 pub mod ticket;
+pub mod trophy;
 
 pub use admin::*;
 pub use claim::*;
@@ -17,3 +18,4 @@ pub use referral::*;
 pub use round::*;
 pub use subscription::*;
 pub use ticket::*;
+pub use trophy::*;

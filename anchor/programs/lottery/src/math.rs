@@ -366,7 +366,7 @@ pub fn compute_per_combo_payouts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::{MEGAPOT_TIER_IS_WINNING, MEGAPOT_TIER_PREMIUM_WEIGHT_BPS};
+    use crate::constants::{DEFAULT_TIER_IS_WINNING, DEFAULT_TIER_PREMIUM_WEIGHT_BPS};
 
     fn weights_jackpot_only() -> [u16; TIER_COUNT] {
         let mut w = [0u16; TIER_COUNT];
@@ -445,10 +445,10 @@ mod tests {
     #[test]
     fn validate_weights_rejects_premium_for_non_winning_tier() {
         let mut w = [0u16; TIER_COUNT];
-        // give some weight to tier 0 which is non-winning by Megapot defaults
+        // give some weight to tier 0 which is non-winning by the defaults above
         w[0] = 1_000;
         w[11] = 9_000;
-        assert!(validate_tier_weight_bps(&w, &MEGAPOT_TIER_IS_WINNING).is_err());
+        assert!(validate_tier_weight_bps(&w, &DEFAULT_TIER_IS_WINNING).is_err());
     }
 
     #[test]
@@ -483,7 +483,7 @@ mod tests {
             1_000_000_000,
             30,
             15,
-            &MEGAPOT_TIER_IS_WINNING,
+            &DEFAULT_TIER_IS_WINNING,
             &weights_jackpot_only(),
             &no_mins(),
             0,
@@ -497,13 +497,13 @@ mod tests {
     }
 
     #[test]
-    fn payout_uses_megapot_default_weights() {
+    fn payout_uses_default_weights() {
         let plan = compute_per_combo_payouts(
             1_000_000_000,
             30,
             15,
-            &MEGAPOT_TIER_IS_WINNING,
-            &MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
+            &DEFAULT_TIER_IS_WINNING,
+            &DEFAULT_TIER_PREMIUM_WEIGHT_BPS,
             &no_mins(),
             0,
         )
@@ -524,7 +524,7 @@ mod tests {
             1_000_000_000,
             30,
             15,
-            &MEGAPOT_TIER_IS_WINNING,
+            &DEFAULT_TIER_IS_WINNING,
             &weights_jackpot_only(),
             &no_mins(),
             0,
@@ -549,8 +549,8 @@ mod tests {
             1_000_000_000,
             30,
             15,
-            &MEGAPOT_TIER_IS_WINNING,
-            &MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
+            &DEFAULT_TIER_IS_WINNING,
+            &DEFAULT_TIER_PREMIUM_WEIGHT_BPS,
             &no_mins(),
             0,
         )
@@ -580,8 +580,8 @@ mod tests {
             10_000_000,
             30,
             15,
-            &MEGAPOT_TIER_IS_WINNING,
-            &MEGAPOT_TIER_PREMIUM_WEIGHT_BPS,
+            &DEFAULT_TIER_IS_WINNING,
+            &DEFAULT_TIER_PREMIUM_WEIGHT_BPS,
             &mins,
             2_000,
         )

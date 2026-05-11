@@ -1,9 +1,9 @@
 {
   "name": "lottery",
   "scripts": {
+    "build": "next build",
     "anchor-build": "cd anchor && anchor build",
     "anchor-test": "cd anchor && anchor test --skip-deploy",
-    "build": "next build",
     "ci": "npm run build && npm run lint && npm run format:check",
     "codama:js": "codama run js",
     "dev": "next dev",
@@ -11,9 +11,13 @@
     "format:check": "prettier --check .",
     "lint": "eslint",
     "setup": "npm run anchor-build && npm run codama:js",
-    "start": "next start"
+    "start": "next start",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
-  "description": "Megapot lottery operations console built with Next.js, Anchor, and @solana/kit",
+  "description": "BlinkPot lottery operations console built with Next.js, Anchor, and @solana/kit",
   "keywords": [
     "anchor",
     "kit",
@@ -29,6 +33,7 @@
     "@gravity-ui/icons": "^2.18.0",
     "@heroui/react": "^3.0.4",
     "@heroui/styles": "^3.0.4",
+    "@opennextjs/cloudflare": "^1.19.8",
     "@solana-program/token": "^0.13.0",
     "@solana/kit": "^6.3.0",
     "@solana/kit-client-rpc": "^0.7.0",
@@ -61,6 +66,7 @@
     "eslint-config-next": "16.0.10",
     "prettier": "^3.6.2",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.90.0"
   }
 }
