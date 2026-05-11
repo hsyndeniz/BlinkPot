@@ -11,16 +11,14 @@ export const CLUSTERS: ClusterMoniker[] = [
 ];
 
 const CLUSTER_URLS: Record<ClusterMoniker, string> = {
-  devnet:
-    "https://devnet.helius-rpc.com/?api-key=f289f22d-82f8-402d-b080-75d47ba8045e",
+  devnet: "https://api.devnet.solana.com",
   testnet: "https://api.testnet.solana.com",
   mainnet: "https://api.mainnet-beta.solana.com",
   localnet: "http://localhost:8899",
 };
 
 const WS_URLS: Record<ClusterMoniker, string> = {
-  devnet:
-    "wss://devnet.helius-rpc.com/?api-key=f289f22d-82f8-402d-b080-75d47ba8045e",
+  devnet: "wss://api.devnet.solana.com",
   testnet: "wss://api.testnet.solana.com",
   mainnet: "wss://api.mainnet-beta.solana.com",
   localnet: "ws://localhost:8900",
